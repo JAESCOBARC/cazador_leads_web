@@ -5,6 +5,7 @@ Cazador Leads Web — API Flask
 Expone la funcionalidad de búsqueda como servicio web
 """
 
+import os
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from pathlib import Path
@@ -136,4 +137,8 @@ def obtener_resultados():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Solo se usa en desarrollo local (python app.py). En producción (Render)
+    # gunicorn importa `app` directamente y este bloque no se ejecuta.
+    puerto = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
+    app.run(debug=debug, host='0.0.0.0', port=puerto)

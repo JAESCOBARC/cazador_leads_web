@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: cazador-leads-web
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SERPAPI_KEY
+        sync: false
+      - key: MAX_RESULTS
+        value: "10"
+      - key: REMITENTE_NOMBRE
+        sync: false
+      - key: REMITENTE_CARGO
+        sync: false
+      - key: AGENCIA_NOMBRE
+        sync: false
+      - key: REMITENTE_CONTACTO
+        sync: false
