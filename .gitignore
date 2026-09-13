@@ -1,0 +1,12 @@
+# Secretos - NUNCA subir
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Herramientas locales
+.claude/
+
+# Resultados generados (contienen datos reales de negocios de cada búsqueda)
+prospects_encontrados.md

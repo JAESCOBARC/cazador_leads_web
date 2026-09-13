@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cazador Leads Web</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23104861'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #104861;
+            color: #e8e8e8;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: #fff;
+            margin-bottom: 40px;
+        }
+
+        .header-icon {
+            width: 56px;
+            height: 56px;
+            margin-bottom: 10px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            color: #aaa;
+        }
+
+        .search-section {
+            background: #14566f;
+            border: 1px solid #2d7195;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #ccc;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            background: #0a3244;
+            border: 2px solid #2d7195;
+            border-radius: 6px;
+            font-size: 1rem;
+            color: #fff;
+            transition: border-color 0.3s;
+        }
+
+        input::placeholder {
+            color: #666;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #fff;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-search {
+            background: #fff;
+            color: #104861;
+        }
+
+        .btn-search:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-search:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-clear {
+            background: #0a3547;
+            color: #ddd;
+            border: 1px solid #2d7195;
+        }
+
+        .btn-clear:hover {
+            background: #2d7195;
+        }
+
+        .results-section {
+            background: #14566f;
+            border: 1px solid #2d7195;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #2d7195;
+        }
+
+        .results-header h2 {
+            color: #fff;
+        }
+
+        .results-count {
+            background: #fff;
+            color: #104861;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .leads-list {
+            display: grid;
+            gap: 20px;
+        }
+
+        .lead-card {
+            border: 1px solid #2d7195;
+            background: #0d3e54;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .lead-card:hover {
+            border-color: #666;
+        }
+
+        .lead-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .lead-number {
+            background: #fff;
+            color: #104861;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .lead-title {
+            flex: 1;
+            margin-left: 15px;
+        }
+
+        .lead-title h3 {
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        .lead-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #104861;
+            border: 1px solid #0a3547;
+            border-radius: 6px;
+        }
+
+        .info-item {
+            font-size: 0.9rem;
+        }
+
+        .info-label {
+            color: #999;
+            font-weight: 600;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            color: #eee;
+            word-break: break-all;
+        }
+
+        .email-section {
+            display: none;
+            padding-top: 15px;
+            border-top: 1px solid #2d7195;
+        }
+
+        .email-section.active {
+            display: block;
+        }
+
+        .email-subject {
+            background: #0a3244;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .email-body {
+            background: #0a3244;
+            border: 1px solid #0a3547;
+            padding: 15px;
+            border-radius: 6px;
+            line-height: 1.6;
+            font-size: 0.95rem;
+            color: #ccc;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .expand-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        .expand-btn:hover {
+            text-decoration: underline;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #aaa;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #0a3547;
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #2a1414;
+            border: 2px solid #7a2020;
+            color: #ff8a8a;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .warning {
+            background: #2a2410;
+            border: 2px solid #8a7420;
+            color: #f0d878;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+            font-size: 0.9rem;
+        }
+
+        .warning.active {
+            display: block;
+        }
+
+        footer {
+            text-align: center;
+            color: #555;
+            font-size: 0.85rem;
+            padding: 30px 0 10px;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+
+            .lead-info {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="9"/>
+                    <circle cx="12" cy="12" r="5"/>
+                    <circle cx="12" cy="12" r="1" fill="#fff"/>
+                    <line x1="12" y1="1" x2="12" y2="4"/>
+                    <line x1="12" y1="20" x2="12" y2="23"/>
+                    <line x1="1" y1="12" x2="4" y2="12"/>
+                    <line x1="20" y1="12" x2="23" y2="12"/>
+                </svg>
+                Cazador Leads Web
+            </h1>
+            <p>Encuentra negocios sin página web y genera emails personalizados</p>
+        </header>
+
+        <div class="search-section">
+            <div class="error" id="error"></div>
+
+            <div class="form-group">
+                <label for="nicho">Nicho de negocio</label>
+                <input type="text" id="nicho" placeholder="Ej: pizzeria, odontologos, salones de belleza" required>
+            </div>
+
+            <div class="form-group">
+                <label for="ciudad">Ciudad</label>
+                <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" required>
+            </div>
+
+            <div class="form-group">
+                <label for="pais">País</label>
+                <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" required>
+            </div>
+
+            <div class="button-group">
+                <button class="btn-search" id="searchBtn" onclick="buscar()">🔍 Buscar Prospects</button>
+                <button class="btn-clear" onclick="limpiar()">Limpiar</button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Buscando prospects...</p>
+        </div>
+
+        <div class="results-section" id="results">
+            <div class="warning" id="warning"></div>
+            <div class="results-header">
+                <h2>Resultados</h2>
+                <div class="results-count"><span id="totalLeads">0</span> leads encontrados</div>
+            </div>
+
+            <div class="leads-list" id="leadsList"></div>
+        </div>
+
+        <footer>Desarrollado por Jhony Escobar</footer>
+    </div>
+
+    <script>
+        async function buscar() {
+            const nicho = document.getElementById('nicho').value.trim();
+            const ciudad = document.getElementById('ciudad').value.trim();
+            const pais = document.getElementById('pais').value.trim();
+            const errorDiv = document.getElementById('error');
+            const loadingDiv = document.getElementById('loading');
+            const resultsDiv = document.getElementById('results');
+
+            // Validar
+            if (!nicho || !ciudad || !pais) {
+                mostrarError('Por favor completa todos los campos');
+                return;
+            }
+
+            // Mostrar loading
+            errorDiv.classList.remove('active');
+            loadingDiv.classList.add('active');
+            resultsDiv.classList.remove('active');
+
+            try {
+                const response = await fetch('/api/buscar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nicho, ciudad, pais })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la búsqueda');
+                }
+
+                mostrarResultados(data);
+                loadingDiv.classList.remove('active');
+
+            } catch (error) {
+                mostrarError(error.message);
+                loadingDiv.classList.remove('active');
+            }
+        }
+
+        function mostrarResultados(data) {
+            const resultsDiv = document.getElementById('results');
+            const leadsList = document.getElementById('leadsList');
+            const totalLeads = document.getElementById('totalLeads');
+            const warningDiv = document.getElementById('warning');
+
+            totalLeads.textContent = data.total;
+            leadsList.innerHTML = '';
+
+            if (data.advertencia) {
+                warningDiv.textContent = '⚠️ ' + data.advertencia;
+                warningDiv.classList.add('active');
+            } else {
+                warningDiv.classList.remove('active');
+            }
+
+            const canalInfo = {
+                whatsapp: { boton: '💬 Ver mensaje para WhatsApp' },
+                email: { boton: '📧 Ver email personalizado' },
+                telefono: { boton: '✉️ Ver mensaje (verificar canal manualmente)' }
+            };
+
+            data.leads.forEach(lead => {
+                const card = document.createElement('div');
+                card.className = 'lead-card';
+                const info = canalInfo[lead.canal_recomendado] || canalInfo.telefono;
+
+                let badge;
+                if (lead.canal_recomendado === 'whatsapp') {
+                    badge = lead.whatsapp_confirmado
+                        ? '💬 WhatsApp (publicado por el negocio)'
+                        : '💬 WhatsApp (generado desde el teléfono — verificar)';
+                } else if (lead.canal_recomendado === 'email') {
+                    badge = '📧 Email';
+                } else {
+                    badge = '☎️ Solo teléfono';
+                }
+
+                let contactoDirectoHtml = '';
+                if (lead.whatsapp) {
+                    contactoDirectoHtml += `<div class="info-item" style="grid-column: 1/-1;">
+                        <span class="info-label">WhatsApp</span>
+                        <span class="info-value"><a href="${escapeHtml(lead.whatsapp)}" target="_blank" rel="noopener" style="color:#fff;">${escapeHtml(lead.whatsapp)}</a></span>
+                    </div>`;
+                }
+                if (lead.redes_sociales) {
+                    contactoDirectoHtml += `<div class="info-item" style="grid-column: 1/-1;">
+                        <span class="info-label">Red social</span>
+                        <span class="info-value">${escapeHtml(lead.redes_sociales)}</span>
+                    </div>`;
+                }
+
+                const asuntoHtml = lead.asunto
+                    ? `<div class="email-subject"><strong>Asunto:</strong> ${escapeHtml(lead.asunto)}</div>`
+                    : '';
+
+                card.innerHTML = `
+                    <div class="lead-header">
+                        <div class="lead-number">${lead.numero}</div>
+                        <div class="lead-title">
+                            <h3>${escapeHtml(lead.nombre)}</h3>
+                            <span style="font-size:0.8rem;color:#7fc4e0;font-weight:600;">${badge}</span>
+                        </div>
+                    </div>
+
+                    <div class="lead-info">
+                        <div class="info-item">
+                            <span class="info-label">Teléfono</span>
+                            <span class="info-value">${escapeHtml(lead.telefono)}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Email</span>
+                            <span class="info-value">${escapeHtml(lead.email)}</span>
+                        </div>
+                        ${contactoDirectoHtml}
+                        <div class="info-item" style="grid-column: 1/-1;">
+                            <span class="info-label">Ubicación</span>
+                            <span class="info-value">${escapeHtml(lead.direccion)}</span>
+                        </div>
+                    </div>
+
+                    <button class="expand-btn" onclick="toggleEmail(this)">${info.boton}</button>
+
+                    <div class="email-section">
+                        ${asuntoHtml}
+                        <div class="email-body">${escapeHtml(lead.cuerpo)}</div>
+                    </div>
+                `;
+
+                leadsList.appendChild(card);
+            });
+
+            resultsDiv.classList.add('active');
+        }
+
+        function toggleEmail(btn) {
+            const emailSection = btn.nextElementSibling;
+            if (!btn.dataset.originalText) {
+                btn.dataset.originalText = btn.textContent;
+            }
+            emailSection.classList.toggle('active');
+            btn.textContent = emailSection.classList.contains('active') ? '🔽 Ocultar' : btn.dataset.originalText;
+        }
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
+
+        function mostrarError(mensaje) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = '❌ ' + mensaje;
+            errorDiv.classList.add('active');
+        }
+
+        function limpiar() {
+            document.getElementById('nicho').value = '';
+            document.getElementById('ciudad').value = '';
+            document.getElementById('pais').value = '';
+            document.getElementById('results').classList.remove('active');
+            document.getElementById('error').classList.remove('active');
+            document.getElementById('nicho').focus();
+        }
+
+        // Enter para buscar
+        document.getElementById('pais').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') buscar();
+        });
+    </script>
+</body>
+</html>
