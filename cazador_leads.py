@@ -9,6 +9,7 @@ simulados/inventados bajo ninguna circunstancia.
 
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +24,8 @@ except ImportError:
 
 
 class CazadorLeads:
+    _cache_geo = {}  # compartido entre instancias: evita repetir geocodificaciones
+
     def __init__(self, base_dir="."):
         self.base_dir = Path(base_dir)
         self.nicho_file = self.base_dir / "nicho.txt"
@@ -96,9 +99,6 @@ class CazadorLeads:
         if ciudad_limpia != ciudad:
             print(f"   ℹ️ Ubicación simplificada para la búsqueda: '{ciudad}' → '{ciudad_limpia}'")
 
-        url = "https://nominatim.openstreetmap.org/search"
-        headers = {"User-Agent": "CazadorLeadsWeb/1.0"}
-
         # Intenta primero con el texto limpio; si no encuentra nada y se había
         # modificado el texto, reintenta con el original (por si el nombre real
         # del lugar sí incluye esa palabra, ej. "Sector Los Andes").
@@ -107,19 +107,62 @@ class CazadorLeads:
             intentos.append(ciudad)
 
         for intento in intentos:
-            params = {"q": f"{intento}, {pais}", "format": "json", "limit": 1}
+            clave = f"{intento}, {pais}".lower()
+            if clave in self._cache_geo:
+                return self._cache_geo[clave]
+
+            geo = None
+            try:
+                geo = self._geocodificar_nominatim(clave)
+            except requests.RequestException as e:
+                print(f"   ⚠️ Nominatim falló ({e}); probando Photon...")
+                geo = self._geocodificar_photon(clave)
+
+            if geo:
+                self._cache_geo[clave] = geo
+                return geo
+
+        return None
+
+    def _geocodificar_nominatim(self, consulta):
+        """Nominatim con reintentos ante 429 (límite de 1 req/s, IPs compartidas como Render)."""
+        url = "https://nominatim.openstreetmap.org/search"
+        headers = {"User-Agent": "CazadorLeadsWeb/1.0 (jhonya2000@gmail.com)"}
+        params = {"q": consulta, "format": "json", "limit": 1}
+
+        for espera in (0, 2, 5):
+            if espera:
+                time.sleep(espera)
             response = requests.get(url, params=params, headers=headers, timeout=15)
+            if response.status_code == 429:
+                continue
             response.raise_for_status()
             resultados = response.json()
-
             if resultados:
                 return {
                     "lat": float(resultados[0]["lat"]),
                     "lon": float(resultados[0]["lon"]),
                     "display_name": resultados[0]["display_name"]
                 }
+            return None
+        raise requests.RequestException("429 Too many requests (reintentos agotados)")
 
-        return None
+    def _geocodificar_photon(self, consulta):
+        """Geocodificador alternativo (Photon/komoot, también basado en OpenStreetMap)."""
+        response = requests.get(
+            "https://photon.komoot.io/api/",
+            params={"q": consulta, "limit": 1},
+            headers={"User-Agent": "CazadorLeadsWeb/1.0 (jhonya2000@gmail.com)"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        features = response.json().get("features", [])
+        if not features:
+            return None
+        lon, lat = features[0]["geometry"]["coordinates"]
+        p = features[0].get("properties", {})
+        nombre = ", ".join(x for x in (p.get("name"), p.get("state"), p.get("country")) if x)
+        return {"lat": float(lat), "lon": float(lon), "display_name": nombre or consulta}
 
     def buscar_en_google(self):
         """Busca negocios REALES en Google Maps vía SerpAPI. No genera ni completa
