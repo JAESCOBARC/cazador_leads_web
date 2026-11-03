@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar sesión · Cazador Leads Web</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="login-body">
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></symbol>
+        <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+    </svg>
+    <main class="card login-card">
+        <div class="login-marca">
+            <svg class="icono" aria-hidden="true"><use href="#i-crosshair"/></svg>
+            Cazador Leads Web
+        </div>
+        {% if error %}
+        <div class="aviso error active" role="alert">
+            <svg class="icono sm" aria-hidden="true"><use href="#i-circle-alert"/></svg>
+            <span>{{ error }}</span>
+        </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('login') }}">
+            <div class="form-group" style="margin-bottom:16px">
+                <label for="usuario">Usuario</label>
+                <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-search">Entrar</button>
+        </form>
+    </main>
+</body>
+</html>

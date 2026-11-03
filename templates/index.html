@@ -5,286 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cazador Leads Web</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23172B45'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
-    <style>
-        /* ===== Tokens ===== */
-        :root {
-            --navy: #172B45;
-            --navy-2: #223A5A;
-            --azul: #1769AA;
-            --azul-h: #125687;
-            --azul-suave: #E6F0F8;
-            --fondo: #F5F7FB;
-            --superficie: #FFFFFF;
-            --texto: #172033;
-            --texto-2: #64748B;
-            --borde: #E2E8F0;
-            --exito: #10B981;
-            --exito-t: #047857;
-            --exito-f: #D1FAE5;
-            --aviso: #F59E0B;
-            --aviso-t: #92400E;
-            --aviso-f: #FEF3C7;
-            --error: #EF4444;
-            --error-t: #B91C1C;
-            --error-f: #FEE2E2;
-            --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px;
-            --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
-            --sombra: 0 1px 2px rgba(23,43,69,.06), 0 2px 8px rgba(23,43,69,.05);
-            --fuente: Inter, "Geist Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-            --nav-h: 64px;
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        html { scroll-behavior: smooth; }
-
-        body {
-            font-family: var(--fuente);
-            background: var(--fondo);
-            color: var(--texto);
-            line-height: 1.5;
-            min-height: 100vh;
-            padding-bottom: calc(var(--nav-h) + var(--s4));
-        }
-
-        .icono {
-            width: 20px; height: 20px; flex-shrink: 0;
-            fill: none; stroke: currentColor; stroke-width: 2;
-            stroke-linecap: round; stroke-linejoin: round;
-        }
-        .icono.sm { width: 16px; height: 16px; }
-
-        :focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
-
-        /* ===== Navegación única: barra inferior (móvil) / lateral (≥960px) ===== */
-        .nav {
-            position: fixed; z-index: 20;
-            left: 0; right: 0; bottom: 0; height: var(--nav-h);
-            background: var(--navy); color: #fff;
-            display: flex; align-items: stretch; justify-content: space-around;
-            box-shadow: 0 -2px 12px rgba(23,43,69,.2);
-        }
-        .nav-marca { display: none; }
-        .nav a {
-            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: var(--s1); color: #CBD5E1; text-decoration: none;
-            font-size: .75rem; font-weight: 500;
-            transition: background .15s, color .15s;
-        }
-        .nav a:hover { background: var(--navy-2); color: #fff; }
-        .nav a[aria-current="page"] { color: #fff; box-shadow: inset 0 3px 0 var(--azul); background: var(--navy-2); }
-        .nav a:focus-visible { outline-color: #fff; outline-offset: -3px; }
-        .nav .largo { display: none; }
-
-        .main { max-width: 960px; margin: 0 auto; padding: var(--s4); }
-
-        /* ===== Cabecera de página ===== */
-        .pagina-cab { margin: var(--s4) 0 var(--s6); }
-        .pagina-cab h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; }
-        .pagina-cab p { color: var(--texto-2); margin-top: var(--s1); }
-
-        /* ===== Card ===== */
-        .card {
-            background: var(--superficie);
-            border: 1px solid var(--borde);
-            border-radius: var(--r-lg);
-            box-shadow: var(--sombra);
-            padding: var(--s6);
-            margin-bottom: var(--s6);
-        }
-        .card-titulo { font-size: 1.05rem; font-weight: 600; margin-bottom: var(--s4); display: flex; align-items: center; gap: var(--s2); }
-
-        /* ===== Formulario ===== */
-        .form-grid { display: grid; gap: var(--s4); grid-template-columns: 1fr; }
-        .form-group label { display: block; margin-bottom: var(--s2); font-size: .875rem; font-weight: 600; color: var(--texto); }
-        input {
-            width: 100%; padding: 10px var(--s3);
-            font: inherit; font-size: .95rem; color: var(--texto);
-            background: var(--superficie);
-            border: 1px solid #CBD5E1; border-radius: var(--r-sm);
-            transition: border-color .15s, box-shadow .15s;
-        }
-        input::placeholder { color: #94A3B8; }
-        input:hover { border-color: #94A3B8; }
-        input:focus { outline: none; border-color: var(--azul); box-shadow: 0 0 0 3px rgba(23,105,170,.2); }
-        input:disabled { background: var(--fondo); color: var(--texto-2); cursor: not-allowed; }
-
-        .button-group { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s6); }
-
-        /* ===== Botones ===== */
-        button { font: inherit; cursor: pointer; }
-        .btn {
-            display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
-            padding: 10px var(--s4); font-size: .95rem; font-weight: 600;
-            border-radius: var(--r-sm); border: 1px solid transparent;
-            transition: background .15s, border-color .15s, color .15s, transform .05s;
-        }
-        .btn:active:not(:disabled) { transform: translateY(1px); }
-        .btn:disabled { opacity: .55; cursor: not-allowed; }
-        .btn-search { background: var(--azul); color: #fff; }
-        .btn-search:hover:not(:disabled) { background: var(--azul-h); }
-        .btn-clear { background: var(--superficie); color: var(--texto); border-color: #CBD5E1; }
-        .btn-clear:hover:not(:disabled) { background: var(--fondo); border-color: #94A3B8; }
-
-        .btn.cargando { position: relative; color: transparent; pointer-events: none; }
-        .btn.cargando > * { visibility: hidden; }
-        .btn.cargando::after {
-            content: ""; position: absolute; width: 18px; height: 18px;
-            border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
-            border-radius: 50%; animation: spin .8s linear infinite;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* ===== Avisos ===== */
-        .aviso {
-            display: none; align-items: flex-start; gap: var(--s3);
-            padding: var(--s3) var(--s4); border-radius: var(--r-sm);
-            border: 1px solid; margin-bottom: var(--s4); font-size: .9rem;
-        }
-        .aviso.active { display: flex; }
-        .aviso .icono { margin-top: 2px; }
-        .error { background: var(--error-f); border-color: #FCA5A5; color: var(--error-t); }
-        .warning { background: var(--aviso-f); border-color: #FCD34D; color: var(--aviso-t); }
-
-        /* ===== Estado de carga ===== */
-        .loading { display: none; align-items: center; gap: var(--s3); margin-top: var(--s4); color: var(--texto-2); font-size: .9rem; }
-        .loading.active { display: flex; }
-        .spinner {
-            width: 20px; height: 20px; flex-shrink: 0;
-            border: 2px solid var(--borde); border-top-color: var(--azul);
-            border-radius: 50%; animation: spin .8s linear infinite;
-        }
-
-        /* ===== Resultados ===== */
-        .results-section { display: none; }
-        .results-section.active { display: block; }
-
-        .results-header {
-            display: flex; flex-wrap: wrap; gap: var(--s3);
-            justify-content: space-between; align-items: center;
-            margin-bottom: var(--s4);
-        }
-        .results-header h2 { font-size: 1.25rem; font-weight: 700; }
-
-        .badge {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 2px 10px; border-radius: 999px;
-            font-size: .75rem; font-weight: 600; white-space: nowrap;
-        }
-        .badge-azul { background: var(--azul-suave); color: var(--azul-h); }
-        .badge-exito { background: var(--exito-f); color: var(--exito-t); }
-        .badge-aviso { background: var(--aviso-f); color: var(--aviso-t); }
-        .badge-neutro { background: #EEF2F7; color: #475569; }
-        .results-count { font-size: .85rem; padding: 4px 12px; }
-
-        .leads-list { display: grid; gap: var(--s4); }
-
-        .lead-card {
-            background: var(--superficie);
-            border: 1px solid var(--borde);
-            border-radius: var(--r-md);
-            box-shadow: var(--sombra);
-            padding: var(--s4);
-            transition: border-color .15s, box-shadow .15s;
-        }
-        .lead-card:hover { border-color: #B6C6DA; box-shadow: 0 4px 14px rgba(23,43,69,.08); }
-
-        .lead-header { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
-        .lead-number {
-            width: 36px; height: 36px; border-radius: var(--r-sm);
-            background: var(--navy); color: #fff;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 600; font-size: .9rem; flex-shrink: 0;
-        }
-        .lead-title { flex: 1; min-width: 0; }
-        .lead-title h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--s1); overflow-wrap: anywhere; }
-
-        .lead-info {
-            display: grid; grid-template-columns: 1fr; gap: var(--s3);
-            padding: var(--s4); margin-bottom: var(--s4);
-            background: var(--fondo); border: 1px solid var(--borde); border-radius: var(--r-sm);
-        }
-        .info-item { font-size: .9rem; min-width: 0; }
-        .info-item.ancho { grid-column: 1 / -1; }
-        .info-label {
-            display: block; margin-bottom: var(--s1);
-            font-size: .7rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-            color: var(--texto-2);
-        }
-        .info-value { color: var(--texto); overflow-wrap: anywhere; }
-        .info-value a { color: var(--azul); text-decoration: none; font-weight: 500; }
-        .info-value a:hover { text-decoration: underline; }
-
-        .expand-btn {
-            display: inline-flex; align-items: center; gap: var(--s2);
-            background: var(--superficie); color: var(--azul);
-            border: 1px solid #CBD5E1; border-radius: var(--r-sm);
-            padding: 8px var(--s3); font-size: .875rem; font-weight: 600;
-            transition: background .15s, border-color .15s;
-        }
-        .expand-btn:hover { background: var(--azul-suave); border-color: var(--azul); }
-        .expand-btn .chev { transition: transform .2s; }
-        .expand-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
-
-        .email-section { display: none; margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--borde); }
-        .email-section.active { display: block; }
-        .email-subject {
-            background: var(--azul-suave); color: var(--navy);
-            padding: var(--s3); border-radius: var(--r-sm); margin-bottom: var(--s3);
-            font-size: .9rem; overflow-wrap: anywhere;
-        }
-        .email-body {
-            background: var(--fondo); border: 1px solid var(--borde);
-            padding: var(--s4); border-radius: var(--r-sm);
-            line-height: 1.6; font-size: .9rem; color: var(--texto);
-            white-space: pre-wrap; overflow-wrap: anywhere;
-        }
-
-        /* ===== Estado vacío ===== */
-        .vacio { text-align: center; padding: var(--s8) var(--s4); color: var(--texto-2); }
-        .vacio .icono { width: 40px; height: 40px; margin-bottom: var(--s3); color: #94A3B8; }
-        .vacio strong { display: block; color: var(--texto); margin-bottom: var(--s1); }
-
-        footer { text-align: center; color: var(--texto-2); font-size: .8rem; padding: var(--s6) 0 var(--s2); }
-
-        /* ===== Tablet ===== */
-        @media (min-width: 640px) {
-            .form-grid { grid-template-columns: repeat(3, 1fr); }
-            .button-group { flex-direction: row; }
-            .lead-info { grid-template-columns: 1fr 1fr; }
-        }
-
-        /* ===== Escritorio: barra lateral ===== */
-        @media (min-width: 960px) {
-            body { padding-bottom: 0; padding-left: 240px; }
-            .nav {
-                top: 0; right: auto; bottom: 0; left: 0; width: 240px; height: auto;
-                flex-direction: column; justify-content: flex-start; align-items: stretch;
-                padding: var(--s6) var(--s3); gap: var(--s1); box-shadow: none;
-            }
-            .nav-marca {
-                display: flex; align-items: center; gap: var(--s3);
-                padding: 0 var(--s3) var(--s6); font-weight: 700; font-size: 1.05rem;
-            }
-            .nav-marca .icono { width: 28px; height: 28px; color: #7DB8E2; }
-            .nav a {
-                flex: 0 0 auto; flex-direction: row; justify-content: flex-start;
-                gap: var(--s3); padding: 10px var(--s3); border-radius: var(--r-sm);
-                font-size: .9rem;
-            }
-            .nav a[aria-current="page"] { box-shadow: none; background: var(--azul); }
-            .nav .corto { display: none; }
-            .nav .largo { display: inline; }
-            .main { padding: var(--s8); }
-            .pagina-cab h1 { font-size: 1.75rem; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
-            .spinner, .btn.cargando::after { animation-duration: 1.5s !important; animation-iteration-count: infinite !important; }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
     <!-- Iconos Lucide (ISC) incrustados -->
@@ -292,6 +13,9 @@
         <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
         <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></symbol>
         <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
         <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
         <symbol id="i-message" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
@@ -299,7 +23,12 @@
         <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
         <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
         <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
         <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+        <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></symbol>
     </svg>
 
     <nav class="nav" aria-label="Principal">
@@ -307,291 +36,816 @@
             <svg class="icono" aria-hidden="true"><use href="#i-crosshair"/></svg>
             Cazador Leads
         </div>
-        <a href="#buscar" id="navBuscar" aria-current="page">
+        <button type="button" class="nav-item" data-vista="buscar" aria-current="page">
             <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
             <span class="corto">Buscar</span><span class="largo">Buscar prospects</span>
-        </a>
-        <a href="#results" id="navResultados">
+        </button>
+        <button type="button" class="nav-item" data-vista="leads">
+            <svg class="icono" aria-hidden="true"><use href="#i-list"/></svg>
+            <span class="corto">Leads</span><span class="largo">Mis leads</span>
+        </button>
+        <button type="button" class="nav-item" data-vista="analitica">
+            <svg class="icono" aria-hidden="true"><use href="#i-chart"/></svg>
+            <span class="corto">Datos</span><span class="largo">Analítica</span>
+        </button>
+        <button type="button" class="nav-item" data-vista="usuarios" id="navUsuarios" hidden>
             <svg class="icono" aria-hidden="true"><use href="#i-users"/></svg>
-            <span class="corto">Leads</span><span class="largo">Resultados</span>
-        </a>
+            <span class="corto">Equipo</span><span class="largo">Usuarios</span>
+        </button>
+        <div class="nav-yo"><strong id="yoNombre">…</strong><span id="yoRol"></span></div>
+        <form method="post" action="/logout">
+            <button type="submit" class="nav-item">
+                <svg class="icono" aria-hidden="true"><use href="#i-logout"/></svg>
+                <span>Salir</span>
+            </button>
+        </form>
     </nav>
 
     <main class="main">
-        <header class="pagina-cab">
-            <h1>Cazador Leads Web</h1>
-            <p>Encuentra negocios sin página web y genera emails personalizados</p>
-        </header>
+        <!-- ============ BUSCAR ============ -->
+        <section class="vista active" id="vista-buscar" aria-labelledby="h-buscar">
+            <header class="pagina-cab">
+                <h1 id="h-buscar">Cazador Leads Web</h1>
+                <p>Encuentra negocios sin página web y genera emails personalizados</p>
+            </header>
 
-        <section class="card" id="buscar" aria-labelledby="tituloBuscar">
-            <h2 class="card-titulo" id="tituloBuscar">
-                <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
-                Nueva búsqueda
-            </h2>
+            <div class="card">
+                <h2 class="card-titulo">
+                    <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
+                    Nueva búsqueda
+                </h2>
 
-            <div class="aviso error" id="error" role="alert"></div>
+                <div class="aviso error" id="error" role="alert"></div>
 
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="nicho">Nicho de negocio</label>
-                    <input type="text" id="nicho" placeholder="Ej: pizzeria, odontologos, salones de belleza" required>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="nicho">Nicho de negocio</label>
+                        <input type="text" id="nicho" placeholder="Ej: pizzeria, odontologos, salones de belleza" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="ciudad">Ciudad</label>
+                        <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="pais">País</label>
+                        <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" required>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="ciudad">Ciudad</label>
-                    <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" required>
+                <div class="button-group">
+                    <button class="btn btn-search" id="searchBtn" onclick="buscar()">
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-search"/></svg>
+                        <span>Buscar prospects</span>
+                    </button>
+                    <button class="btn btn-clear" onclick="limpiar()">
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-trash"/></svg>
+                        <span>Limpiar</span>
+                    </button>
                 </div>
 
-                <div class="form-group">
-                    <label for="pais">País</label>
-                    <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" required>
+                <div class="loading" id="loading" role="status">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <p>Buscando prospects…</p>
                 </div>
             </div>
 
-            <div class="button-group">
-                <button class="btn btn-search" id="searchBtn" onclick="buscar()">
-                    <svg class="icono sm" aria-hidden="true"><use href="#i-search"/></svg>
-                    <span>Buscar prospects</span>
-                </button>
-                <button class="btn btn-clear" onclick="limpiar()">
-                    <svg class="icono sm" aria-hidden="true"><use href="#i-trash"/></svg>
-                    <span>Limpiar</span>
-                </button>
-            </div>
-
-            <div class="loading" id="loading" role="status">
-                <div class="spinner" aria-hidden="true"></div>
-                <p>Buscando prospects…</p>
-            </div>
+            <section class="results-section" id="results" aria-labelledby="tituloResultados">
+                <div class="aviso warning" id="warning" role="status"></div>
+                <div class="results-header">
+                    <h2 id="tituloResultados">Resultados</h2>
+                    <span class="badge badge-azul results-count"><span id="totalLeads">0</span>&nbsp;leads encontrados</span>
+                </div>
+                <div class="leads-list" id="leadsList"></div>
+            </section>
         </section>
 
-        <section class="results-section" id="results" aria-labelledby="tituloResultados">
-            <div class="aviso warning" id="warning" role="status"></div>
-            <div class="results-header">
-                <h2 id="tituloResultados">Resultados</h2>
-                <span class="badge badge-azul results-count"><span id="totalLeads">0</span>&nbsp;leads encontrados</span>
+        <!-- ============ LEADS ============ -->
+        <section class="vista" id="vista-leads" aria-labelledby="h-leads">
+            <header class="pagina-cab">
+                <h1 id="h-leads">Mis leads</h1>
+                <p>Controla qué leads has contactado, quién los lleva y cuándo hacer seguimiento</p>
+            </header>
+
+            <div class="filtros">
+                <div>
+                    <label class="sr" for="fQ" style="position:absolute;left:-9999px">Buscar</label>
+                    <input type="search" id="fQ" placeholder="Buscar por nombre, teléfono, nicho o ciudad">
+                </div>
+                <div>
+                    <label for="fEstado" style="position:absolute;left:-9999px">Estado</label>
+                    <select id="fEstado"></select>
+                </div>
+                <div>
+                    <label for="fAsignado" style="position:absolute;left:-9999px">Asignado a</label>
+                    <select id="fAsignado"></select>
+                </div>
+            </div>
+            <div class="filtros-acciones">
+                <label class="check"><input type="checkbox" id="fSeg"> Solo seguimientos pendientes</label>
+                <a class="btn btn-clear btn-sm" href="/api/leads.csv" style="text-decoration:none">
+                    <svg class="icono sm" aria-hidden="true"><use href="#i-download"/></svg>
+                    <span>Exportar CSV</span>
+                </a>
             </div>
 
-            <div class="leads-list" id="leadsList"></div>
+            <div class="aviso error" id="errorLeads" role="alert"></div>
+            <div id="leadsTabla"></div>
+        </section>
+
+        <!-- ============ ANALÍTICA ============ -->
+        <section class="vista" id="vista-analitica" aria-labelledby="h-analitica">
+            <header class="pagina-cab">
+                <h1 id="h-analitica">Analítica</h1>
+                <p>Cómo avanza tu prospección: contactos, respuestas y cierres</p>
+            </header>
+            <div class="aviso error" id="errorAnalitica" role="alert"></div>
+            <div id="analiticaCont"></div>
+        </section>
+
+        <!-- ============ USUARIOS ============ -->
+        <section class="vista" id="vista-usuarios" aria-labelledby="h-usuarios">
+            <header class="pagina-cab">
+                <h1 id="h-usuarios">Usuarios</h1>
+                <p>Crea cuentas para tu equipo y asígnales leads</p>
+            </header>
+
+            <div class="card">
+                <h2 class="card-titulo">
+                    <svg class="icono" aria-hidden="true"><use href="#i-user-plus"/></svg>
+                    Nuevo usuario
+                </h2>
+                <div class="aviso error" id="errorUsuarios" role="alert"></div>
+                <div class="aviso exito" id="okUsuarios" role="status"></div>
+                <form id="formUsuario" autocomplete="off">
+                    <div class="fila-2">
+                        <div class="form-group">
+                            <label for="uNombre">Nombre completo</label>
+                            <input type="text" id="uNombre" required maxlength="120">
+                        </div>
+                        <div class="form-group">
+                            <label for="uUsuario">Usuario</label>
+                            <input type="text" id="uUsuario" required maxlength="60" autocapitalize="none">
+                        </div>
+                        <div class="form-group">
+                            <label for="uPass">Contraseña</label>
+                            <input type="password" id="uPass" required minlength="8" autocomplete="new-password">
+                            <p class="ayuda">Mínimo 8 caracteres.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="uRol">Rol</label>
+                            <select id="uRol">
+                                <option value="usuario">Usuario</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-search" id="uBtn">
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-user-plus"/></svg>
+                        <span>Crear usuario</span>
+                    </button>
+                </form>
+            </div>
+
+            <div id="usuariosTabla"></div>
         </section>
 
         <footer>Desarrollado por Jhony Escobar</footer>
     </main>
 
+    <!-- ============ MODAL: gestionar lead ============ -->
+    <dialog id="dlgLead" aria-labelledby="dlgTitulo">
+        <div class="dlg-cab">
+            <div>
+                <h2 id="dlgTitulo">Lead</h2>
+                <div id="dlgSub" class="muted" style="font-size:.85rem"></div>
+            </div>
+            <button type="button" class="btn-icono" id="dlgCerrar" aria-label="Cerrar">
+                <svg class="icono" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+        </div>
+        <div class="dlg-cuerpo">
+            <div class="aviso error" id="dlgError" role="alert"></div>
+            <div id="dlgInfo"></div>
+
+            <details class="msg-box" id="dlgMsg">
+                <summary>Mensaje sugerido</summary>
+                <div class="email-subject" id="dlgAsunto" hidden></div>
+                <div class="email-body" id="dlgCuerpo"></div>
+                <div class="msg-acciones">
+                    <button type="button" class="btn btn-clear btn-sm" id="dlgCopiar">
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-copy"/></svg>
+                        <span>Copiar mensaje</span>
+                    </button>
+                    <a class="btn btn-clear btn-sm" id="dlgWa" target="_blank" rel="noopener" style="text-decoration:none" hidden>
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-message"/></svg>
+                        <span>Abrir WhatsApp</span>
+                    </a>
+                </div>
+            </details>
+
+            <form id="formLead">
+                <div class="fila-2">
+                    <div class="form-group">
+                        <label for="lEstado">Estado</label>
+                        <select id="lEstado"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="lCanal">Canal usado</label>
+                        <select id="lCanal">
+                            <option value="">—</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="telefono">Llamada</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="lAsignado">Asignado a</label>
+                        <select id="lAsignado"></select>
+                        <p class="ayuda" id="lAyudaAsig">Al marcarlo como contactado queda asignado a esta persona.</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="lSeg">Próximo seguimiento</label>
+                        <input type="date" id="lSeg">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="lNota">Nota de este contacto</label>
+                    <textarea id="lNota" maxlength="2000" placeholder="Ej: Quedó en responder el viernes"></textarea>
+                    <p class="ayuda">Se guarda en el historial cuando cambias el estado.</p>
+                </div>
+                <div class="form-group">
+                    <label for="lNotas">Notas generales del lead</label>
+                    <textarea id="lNotas" maxlength="5000"></textarea>
+                </div>
+
+                <div id="dlgHistorialBox">
+                    <h3 style="font-size:.9rem">Historial</h3>
+                    <ul class="historial" id="dlgHistorial"></ul>
+                </div>
+
+                <div class="dlg-acciones">
+                    <button type="button" class="btn btn-clear" id="dlgCancelar">Cancelar</button>
+                    <button type="submit" class="btn btn-primario" id="dlgGuardar"><span>Guardar</span></button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- ============ MODAL: contraseña ============ -->
+    <dialog id="dlgPass" aria-labelledby="dpTitulo">
+        <div class="dlg-cab">
+            <h2 id="dpTitulo">Nueva contraseña</h2>
+            <button type="button" class="btn-icono" id="dpCerrar" aria-label="Cerrar">
+                <svg class="icono" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+        </div>
+        <div class="dlg-cuerpo">
+            <div class="aviso error" id="dpError" role="alert"></div>
+            <form id="formPass">
+                <div class="form-group">
+                    <label for="dpValor" id="dpEtiqueta">Contraseña</label>
+                    <input type="password" id="dpValor" required minlength="8" autocomplete="new-password">
+                    <p class="ayuda">Mínimo 8 caracteres.</p>
+                </div>
+                <div class="dlg-acciones">
+                    <button type="button" class="btn btn-clear" id="dpCancelar">Cancelar</button>
+                    <button type="submit" class="btn btn-primario"><span>Guardar</span></button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
     <script>
-        function icono(nombre, clase) {
-            return `<svg class="icono ${clase || 'sm'}" aria-hidden="true"><use href="#i-${nombre}"/></svg>`;
+    // ------------------------------------------------------------ utilidades
+    const ESTADOS = {
+        nuevo:       { txt: 'Nuevo',       badge: 'badge-neutro' },
+        contactado:  { txt: 'Contactado',  badge: 'badge-azul' },
+        respondio:   { txt: 'Respondió',   badge: 'badge-aviso' },
+        reunion:     { txt: 'Reunión',     badge: 'badge-azul' },
+        cerrado:     { txt: 'Cerrado',     badge: 'badge-exito' },
+        descartado:  { txt: 'Descartado',  badge: 'badge-error' }
+    };
+    const CANALES = { whatsapp: 'WhatsApp', email: 'Email', telefono: 'Llamada' };
+    const $ = (id) => document.getElementById(id);
+    let YO = null;
+    let USUARIOS = [];
+
+    function icono(nombre, clase) {
+        return `<svg class="icono ${clase || 'sm'}" aria-hidden="true"><use href="#i-${nombre}"/></svg>`;
+    }
+    function escapeHtml(value) {
+        return (value == null ? '' : String(value))
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function badgeEstado(e) {
+        const d = ESTADOS[e] || ESTADOS.nuevo;
+        return `<span class="badge ${d.badge}">${d.txt}</span>`;
+    }
+    function fmtFecha(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso + 'Z');
+        return d.toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    function fmtFechaHora(iso) {
+        if (!iso) return '—';
+        return new Date(iso + 'Z').toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+    function aviso(el, tipo, mensaje) {
+        el.innerHTML = icono(tipo === 'exito' ? 'check' : 'circle-alert') + '<span></span>';
+        el.lastElementChild.textContent = mensaje;
+        el.classList.add('active');
+    }
+    function ocultar(el) { el.classList.remove('active'); }
+
+    async function api(url, opciones) {
+        const r = await fetch(url, opciones);
+        if (r.status === 401) { location.href = '/login'; throw new Error('Sesión caducada'); }
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || 'Error de servidor');
+        return data;
+    }
+    const json = (metodo, cuerpo) => ({ method: metodo, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+
+    function vacio(titulo, texto) {
+        return `<div class="card vacio">${icono('inbox', '')}<strong>${escapeHtml(titulo)}</strong>${escapeHtml(texto)}</div>`;
+    }
+
+    // ------------------------------------------------------------ navegación
+    const VISTAS = ['buscar', 'leads', 'analitica', 'usuarios'];
+    function irA(vista) {
+        if (!VISTAS.includes(vista) || (vista === 'usuarios' && YO && YO.rol !== 'admin')) vista = 'buscar';
+        VISTAS.forEach(v => $('vista-' + v).classList.toggle('active', v === vista));
+        document.querySelectorAll('.nav-item[data-vista]').forEach(b => {
+            if (b.dataset.vista === vista) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+        });
+        if (location.hash !== '#' + vista) history.replaceState(null, '', '#' + vista);
+        window.scrollTo(0, 0);
+        if (vista === 'leads') cargarLeads();
+        if (vista === 'analitica') cargarAnalitica();
+        if (vista === 'usuarios') cargarUsuarios();
+    }
+    document.querySelectorAll('.nav-item[data-vista]').forEach(b => b.addEventListener('click', () => irA(b.dataset.vista)));
+
+    async function iniciar() {
+        YO = await api('/api/yo');
+        $('yoNombre').textContent = YO.nombre;
+        $('yoRol').textContent = YO.rol === 'admin' ? 'Administrador' : 'Usuario';
+        $('navUsuarios').hidden = YO.rol !== 'admin';
+        await refrescarUsuarios();
+        irA(location.hash.slice(1) || 'buscar');
+    }
+
+    async function refrescarUsuarios() {
+        USUARIOS = (await api('/api/usuarios')).usuarios;
+    }
+
+    // ------------------------------------------------------------ BUSCAR
+    async function buscar() {
+        const nicho = $('nicho').value.trim();
+        const ciudad = $('ciudad').value.trim();
+        const pais = $('pais').value.trim();
+        const errorDiv = $('error');
+        const btn = $('searchBtn');
+
+        if (!nicho || !ciudad || !pais) {
+            aviso(errorDiv, 'error', 'Por favor completa todos los campos');
+            return;
         }
 
-        async function buscar() {
-            const nicho = document.getElementById('nicho').value.trim();
-            const ciudad = document.getElementById('ciudad').value.trim();
-            const pais = document.getElementById('pais').value.trim();
-            const errorDiv = document.getElementById('error');
-            const loadingDiv = document.getElementById('loading');
-            const resultsDiv = document.getElementById('results');
-            const btn = document.getElementById('searchBtn');
+        ocultar(errorDiv);
+        $('loading').classList.add('active');
+        $('results').classList.remove('active');
+        btn.disabled = true;
+        btn.classList.add('cargando');
+        btn.setAttribute('aria-busy', 'true');
 
-            // Validar
-            if (!nicho || !ciudad || !pais) {
-                mostrarError('Por favor completa todos los campos');
-                return;
-            }
+        try {
+            const data = await api('/api/buscar', json('POST', { nicho, ciudad, pais }));
+            mostrarResultados(data);
+        } catch (error) {
+            aviso(errorDiv, 'error', error.message);
+        } finally {
+            $('loading').classList.remove('active');
+            btn.disabled = false;
+            btn.classList.remove('cargando');
+            btn.removeAttribute('aria-busy');
+        }
+    }
 
-            // Mostrar loading
-            errorDiv.classList.remove('active');
-            loadingDiv.classList.add('active');
-            resultsDiv.classList.remove('active');
-            btn.disabled = true;
-            btn.classList.add('cargando');
-            btn.setAttribute('aria-busy', 'true');
+    function mostrarResultados(data) {
+        const leadsList = $('leadsList');
+        const warningDiv = $('warning');
+        $('totalLeads').textContent = data.total;
+        leadsList.innerHTML = '';
 
-            try {
-                const response = await fetch('/api/buscar', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nicho, ciudad, pais })
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Error en la búsqueda');
-                }
-
-                mostrarResultados(data);
-
-            } catch (error) {
-                mostrarError(error.message);
-            } finally {
-                loadingDiv.classList.remove('active');
-                btn.disabled = false;
-                btn.classList.remove('cargando');
-                btn.removeAttribute('aria-busy');
-            }
+        if (data.advertencia) {
+            warningDiv.innerHTML = icono('alert', 'sm') + '<span></span>';
+            warningDiv.lastElementChild.textContent = data.advertencia;
+            warningDiv.classList.add('active');
+        } else {
+            ocultar(warningDiv);
         }
 
-        function mostrarResultados(data) {
-            const resultsDiv = document.getElementById('results');
-            const leadsList = document.getElementById('leadsList');
-            const totalLeads = document.getElementById('totalLeads');
-            const warningDiv = document.getElementById('warning');
+        if (!data.leads || data.leads.length === 0) {
+            leadsList.innerHTML = vacio('Sin resultados', 'No encontramos negocios sin web para esta búsqueda. Prueba con otro nicho o ciudad.');
+            $('results').classList.add('active');
+            return;
+        }
 
-            totalLeads.textContent = data.total;
-            leadsList.innerHTML = '';
+        const canalInfo = {
+            whatsapp: 'Ver mensaje para WhatsApp',
+            email: 'Ver email personalizado',
+            telefono: 'Ver mensaje (verificar canal manualmente)'
+        };
 
-            if (data.advertencia) {
-                warningDiv.innerHTML = icono('alert', 'sm') + '<span></span>';
-                warningDiv.lastElementChild.textContent = data.advertencia;
-                warningDiv.classList.add('active');
+        data.leads.forEach(lead => {
+            const card = document.createElement('div');
+            card.className = 'lead-card';
+
+            let badge;
+            if (lead.canal_recomendado === 'whatsapp') {
+                badge = lead.whatsapp_confirmado
+                    ? `<span class="badge badge-exito">${icono('message')} WhatsApp (publicado por el negocio)</span>`
+                    : `<span class="badge badge-aviso">${icono('message')} WhatsApp (generado desde el teléfono — verificar)</span>`;
+            } else if (lead.canal_recomendado === 'email') {
+                badge = `<span class="badge badge-azul">${icono('mail')} Email</span>`;
             } else {
-                warningDiv.classList.remove('active');
+                badge = `<span class="badge badge-neutro">${icono('phone')} Solo teléfono</span>`;
+            }
+            const repetido = lead.repetido
+                ? ` <span class="badge badge-aviso">Ya estaba guardado</span>` : '';
+
+            let contactoDirectoHtml = '';
+            if (/^https:\/\//i.test(lead.whatsapp || '')) {
+                contactoDirectoHtml += `<div class="info-item ancho">
+                    <span class="info-label">WhatsApp</span>
+                    <span class="info-value"><a href="${escapeHtml(lead.whatsapp)}" target="_blank" rel="noopener">${escapeHtml(lead.whatsapp)}</a></span>
+                </div>`;
+            }
+            if (lead.redes_sociales) {
+                contactoDirectoHtml += `<div class="info-item ancho">
+                    <span class="info-label">Red social</span>
+                    <span class="info-value">${escapeHtml(lead.redes_sociales)}</span>
+                </div>`;
             }
 
-            if (!data.leads || data.leads.length === 0) {
-                leadsList.innerHTML = `<div class="card vacio">${icono('inbox', '')}<strong>Sin resultados</strong>No encontramos negocios sin web para esta búsqueda. Prueba con otro nicho o ciudad.</div>`;
-                resultsDiv.classList.add('active');
-                return;
-            }
+            const asuntoHtml = lead.asunto
+                ? `<div class="email-subject"><strong>Asunto:</strong> ${escapeHtml(lead.asunto)}</div>` : '';
 
-            const canalInfo = {
-                whatsapp: { boton: 'Ver mensaje para WhatsApp' },
-                email: { boton: 'Ver email personalizado' },
-                telefono: { boton: 'Ver mensaje (verificar canal manualmente)' }
-            };
-
-            data.leads.forEach(lead => {
-                const card = document.createElement('div');
-                card.className = 'lead-card';
-                const info = canalInfo[lead.canal_recomendado] || canalInfo.telefono;
-
-                let badge;
-                if (lead.canal_recomendado === 'whatsapp') {
-                    badge = lead.whatsapp_confirmado
-                        ? `<span class="badge badge-exito">${icono('message')} WhatsApp (publicado por el negocio)</span>`
-                        : `<span class="badge badge-aviso">${icono('message')} WhatsApp (generado desde el teléfono — verificar)</span>`;
-                } else if (lead.canal_recomendado === 'email') {
-                    badge = `<span class="badge badge-azul">${icono('mail')} Email</span>`;
-                } else {
-                    badge = `<span class="badge badge-neutro">${icono('phone')} Solo teléfono</span>`;
-                }
-
-                let contactoDirectoHtml = '';
-                if (lead.whatsapp) {
-                    contactoDirectoHtml += `<div class="info-item ancho">
-                        <span class="info-label">WhatsApp</span>
-                        <span class="info-value"><a href="${escapeHtml(lead.whatsapp)}" target="_blank" rel="noopener">${escapeHtml(lead.whatsapp)}</a></span>
-                    </div>`;
-                }
-                if (lead.redes_sociales) {
-                    contactoDirectoHtml += `<div class="info-item ancho">
-                        <span class="info-label">Red social</span>
-                        <span class="info-value">${escapeHtml(lead.redes_sociales)}</span>
-                    </div>`;
-                }
-
-                const asuntoHtml = lead.asunto
-                    ? `<div class="email-subject"><strong>Asunto:</strong> ${escapeHtml(lead.asunto)}</div>`
-                    : '';
-
-                card.innerHTML = `
-                    <div class="lead-header">
-                        <div class="lead-number">${escapeHtml(lead.numero)}</div>
-                        <div class="lead-title">
-                            <h3>${escapeHtml(lead.nombre)}</h3>
-                            ${badge}
-                        </div>
+            card.innerHTML = `
+                <div class="lead-header">
+                    <div class="lead-number">${escapeHtml(lead.numero)}</div>
+                    <div class="lead-title">
+                        <h3>${escapeHtml(lead.nombre)}</h3>
+                        ${badge}${repetido} ${badgeEstado(lead.estado)}
                     </div>
-
-                    <div class="lead-info">
-                        <div class="info-item">
-                            <span class="info-label">Teléfono</span>
-                            <span class="info-value">${escapeHtml(lead.telefono)}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Email</span>
-                            <span class="info-value">${escapeHtml(lead.email)}</span>
-                        </div>
-                        ${contactoDirectoHtml}
-                        <div class="info-item ancho">
-                            <span class="info-label">Ubicación</span>
-                            <span class="info-value">${escapeHtml(lead.direccion)}</span>
-                        </div>
-                    </div>
-
+                </div>
+                <div class="lead-info">
+                    <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(lead.telefono)}</span></div>
+                    <div class="info-item"><span class="info-label">Email</span><span class="info-value">${escapeHtml(lead.email)}</span></div>
+                    ${contactoDirectoHtml}
+                    <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(lead.direccion)}</span></div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
                     <button class="expand-btn" aria-expanded="false" onclick="toggleEmail(this)">
-                        <span class="expand-label">${info.boton}</span>
+                        <span class="expand-label">${canalInfo[lead.canal_recomendado] || canalInfo.telefono}</span>
                         ${icono('chevron', 'sm chev')}
                     </button>
-
-                    <div class="email-section">
-                        ${asuntoHtml}
-                        <div class="email-body">${escapeHtml(lead.cuerpo)}</div>
-                    </div>
-                `;
-
-                leadsList.appendChild(card);
-            });
-
-            resultsDiv.classList.add('active');
-        }
-
-        function toggleEmail(btn) {
-            const emailSection = btn.nextElementSibling;
-            const label = btn.querySelector('.expand-label');
-            if (!btn.dataset.originalText) {
-                btn.dataset.originalText = label.textContent;
-            }
-            emailSection.classList.toggle('active');
-            const abierto = emailSection.classList.contains('active');
-            btn.setAttribute('aria-expanded', abierto);
-            label.textContent = abierto ? 'Ocultar' : btn.dataset.originalText;
-        }
-
-        function escapeHtml(value) {
-            const div = document.createElement('div');
-            div.textContent = value == null ? '' : String(value);
-            return div.innerHTML;
-        }
-
-        function mostrarError(mensaje) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.innerHTML = icono('circle-alert', 'sm') + '<span></span>';
-            errorDiv.lastElementChild.textContent = mensaje;
-            errorDiv.classList.add('active');
-        }
-
-        function limpiar() {
-            document.getElementById('nicho').value = '';
-            document.getElementById('ciudad').value = '';
-            document.getElementById('pais').value = '';
-            document.getElementById('results').classList.remove('active');
-            document.getElementById('error').classList.remove('active');
-            document.getElementById('nicho').focus();
-        }
-
-        // Enter para buscar
-        document.getElementById('pais').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') buscar();
+                    <button class="btn btn-primario btn-sm" onclick="abrirLead(${Number(lead.id)}, true)">
+                        ${icono('check')} <span>Marcar contactado</span>
+                    </button>
+                </div>
+                <div class="email-section">
+                    ${asuntoHtml}
+                    <div class="email-body">${escapeHtml(lead.cuerpo)}</div>
+                </div>`;
+            leadsList.appendChild(card);
         });
+        $('results').classList.add('active');
+    }
 
-        // Marca activo en la navegación según la sección visible
-        (function () {
-            const links = { buscar: document.getElementById('navBuscar'), results: document.getElementById('navResultados') };
-            function marcar(id) {
-                Object.entries(links).forEach(([k, a]) => {
-                    if (k === id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-                });
+    function toggleEmail(btn) {
+        const emailSection = btn.parentElement.nextElementSibling;
+        const label = btn.querySelector('.expand-label');
+        if (!btn.dataset.originalText) btn.dataset.originalText = label.textContent;
+        emailSection.classList.toggle('active');
+        const abierto = emailSection.classList.contains('active');
+        btn.setAttribute('aria-expanded', abierto);
+        label.textContent = abierto ? 'Ocultar' : btn.dataset.originalText;
+    }
+
+    function limpiar() {
+        $('nicho').value = ''; $('ciudad').value = ''; $('pais').value = '';
+        $('results').classList.remove('active');
+        ocultar($('error'));
+        $('nicho').focus();
+    }
+    $('pais').addEventListener('keypress', (e) => { if (e.key === 'Enter') buscar(); });
+
+    // ------------------------------------------------------------ LEADS
+    function poblarFiltros() {
+        if ($('fEstado').options.length) return;
+        $('fEstado').innerHTML = '<option value="">Todos los estados</option>' +
+            Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('');
+    }
+    function poblarFiltroAsignado() {
+        const actual = $('fAsignado').value;
+        $('fAsignado').innerHTML = '<option value="">Todos los usuarios</option><option value="ninguno">Sin asignar</option>' +
+            USUARIOS.filter(u => u.activo).map(u => `<option value="${u.id}">${escapeHtml(u.nombre)}</option>`).join('');
+        $('fAsignado').value = actual;
+    }
+
+    let timerQ = null;
+    async function cargarLeads() {
+        poblarFiltros();
+        poblarFiltroAsignado();
+        ocultar($('errorLeads'));
+        const p = new URLSearchParams();
+        if ($('fQ').value.trim()) p.set('q', $('fQ').value.trim());
+        if ($('fEstado').value) p.set('estado', $('fEstado').value);
+        if ($('fAsignado').value) p.set('asignado', $('fAsignado').value);
+        if ($('fSeg').checked) p.set('seguimiento', 'pendiente');
+        try {
+            const { leads } = await api('/api/leads?' + p.toString());
+            pintarLeads(leads);
+        } catch (e) {
+            aviso($('errorLeads'), 'error', e.message);
+        }
+    }
+    ['fEstado', 'fAsignado', 'fSeg'].forEach(id => $(id).addEventListener('change', cargarLeads));
+    $('fQ').addEventListener('input', () => { clearTimeout(timerQ); timerQ = setTimeout(cargarLeads, 300); });
+
+    function pintarLeads(leads) {
+        if (!leads.length) {
+            $('leadsTabla').innerHTML = vacio('No hay leads', 'Haz una búsqueda para guardar prospects, o cambia los filtros.');
+            return;
+        }
+        const hoy = new Date().toISOString().slice(0, 10);
+        const filas = leads.map(l => {
+            const vencido = l.proximo_seguimiento && l.proximo_seguimiento <= hoy && ['contactado', 'respondio'].includes(l.estado);
+            return `<tr>
+                <td><span class="nombre-lead">${escapeHtml(l.nombre)}</span><span class="sub">${escapeHtml(l.nicho)} · ${escapeHtml(l.ciudad)}</span></td>
+                <td>${escapeHtml(l.telefono) || '<span class="muted">—</span>'}</td>
+                <td>${badgeEstado(l.estado)}${l.canal_contacto ? `<span class="sub">${CANALES[l.canal_contacto]}</span>` : ''}</td>
+                <td>${escapeHtml(l.asignado_nombre) || '<span class="muted">Sin asignar</span>'}</td>
+                <td>${fmtFecha(l.contactado_en && l.contactado_en.slice(0, 10))}</td>
+                <td>${l.proximo_seguimiento ? `<span class="badge ${vencido ? 'badge-error' : 'badge-neutro'}">${fmtFecha(l.proximo_seguimiento)}</span>` : '<span class="muted">—</span>'}</td>
+                <td class="acciones">
+                    ${l.estado === 'nuevo'
+                        ? `<button class="btn btn-primario btn-sm" onclick="abrirLead(${l.id}, true)">Contactar</button>`
+                        : `<button class="btn btn-clear btn-sm" onclick="abrirLead(${l.id}, false)">Gestionar</button>`}
+                </td>
+            </tr>`;
+        }).join('');
+        $('leadsTabla').innerHTML = `<div class="tabla-wrap"><table>
+            <thead><tr><th>Negocio</th><th>Teléfono</th><th>Estado</th><th>Asignado a</th><th>Contactado</th><th>Seguimiento</th><th></th></tr></thead>
+            <tbody>${filas}</tbody></table></div>`;
+    }
+
+    // ------------------------------------------------------------ MODAL LEAD
+    let leadActual = null;
+    const dlg = $('dlgLead');
+
+    async function abrirLead(id, comoContacto) {
+        ocultar($('dlgError'));
+        try {
+            await refrescarUsuarios();
+            leadActual = await api('/api/leads/' + id);
+        } catch (e) {
+            alert(e.message);
+            return;
+        }
+        const l = leadActual;
+        $('dlgTitulo').textContent = l.nombre;
+        $('dlgSub').textContent = [l.nicho, l.ciudad, l.pais].filter(Boolean).join(' · ');
+        $('dlgInfo').innerHTML = `<div class="lead-info">
+            <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(l.telefono) || '—'}</span></div>
+            <div class="info-item"><span class="info-label">Email</span><span class="info-value">${escapeHtml(l.email) || '—'}</span></div>
+            <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(l.direccion) || '—'}</span></div>
+        </div>`;
+
+        $('dlgAsunto').hidden = !l.asunto;
+        $('dlgAsunto').innerHTML = l.asunto ? `<strong>Asunto:</strong> ${escapeHtml(l.asunto)}` : '';
+        $('dlgCuerpo').textContent = l.cuerpo;
+        $('dlgMsg').hidden = !l.cuerpo;
+        $('dlgMsg').open = !!comoContacto;
+        const wa = $('dlgWa');
+        wa.hidden = !/^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(l.whatsapp || '');
+        if (!wa.hidden) wa.href = l.whatsapp;
+
+        $('lEstado').innerHTML = Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('');
+        $('lAsignado').innerHTML = '<option value="">Sin asignar</option>' +
+            USUARIOS.filter(u => u.activo || u.id === l.asignado_a)
+                .map(u => `<option value="${u.id}">${escapeHtml(u.nombre)}${u.activo ? '' : ' (inactivo)'}</option>`).join('');
+
+        let estado = l.estado, asignado = l.asignado_a, canal = l.canal_contacto || '';
+        if (comoContacto && l.estado === 'nuevo') {
+            estado = 'contactado';
+            asignado = asignado || YO.id;
+            canal = canal || (l.canal_recomendado || '');
+        }
+        $('lEstado').value = estado;
+        $('lAsignado').value = asignado || '';
+        $('lCanal').value = canal;
+        $('lSeg').value = l.proximo_seguimiento || '';
+        $('lNota').value = '';
+        $('lNotas').value = l.notas || '';
+
+        $('dlgHistorialBox').hidden = !l.historial.length;
+        $('dlgHistorial').innerHTML = l.historial.map(h =>
+            `<li>${badgeEstado(h.estado)} <strong>${escapeHtml(h.usuario)}</strong> · ${fmtFechaHora(h.fecha)}` +
+            `${h.canal ? ' · ' + CANALES[h.canal] : ''}${h.nota ? `<br><span class="muted">${escapeHtml(h.nota)}</span>` : ''}</li>`).join('');
+        dlg.showModal();
+    }
+
+    // Al pasar de "nuevo" a otro estado, proponer al usuario actual si no hay asignado
+    $('lEstado').addEventListener('change', () => {
+        if ($('lEstado').value !== 'nuevo' && !$('lAsignado').value) $('lAsignado').value = YO.id;
+    });
+
+    $('formLead').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const btn = $('dlgGuardar');
+        ocultar($('dlgError'));
+        btn.disabled = true; btn.classList.add('cargando');
+        try {
+            await api('/api/leads/' + leadActual.id, json('PATCH', {
+                estado: $('lEstado').value,
+                canal_contacto: $('lCanal').value,
+                asignado_a: $('lAsignado').value || null,
+                proximo_seguimiento: $('lSeg').value || null,
+                nota: $('lNota').value.trim(),
+                notas: $('lNotas').value
+            }));
+            dlg.close();
+            if ($('vista-leads').classList.contains('active')) cargarLeads();
+            if ($('vista-analitica').classList.contains('active')) cargarAnalitica();
+            if ($('vista-buscar').classList.contains('active')) marcarEnResultados(leadActual.id, $('lEstado').value);
+        } catch (e) {
+            aviso($('dlgError'), 'error', e.message);
+        } finally {
+            btn.disabled = false; btn.classList.remove('cargando');
+        }
+    });
+
+    function marcarEnResultados(id, estado) {
+        // Actualiza el badge de estado de la tarjeta en los resultados de búsqueda
+        document.querySelectorAll('#leadsList .lead-card').forEach(card => {
+            const b = card.querySelector('button[onclick^="abrirLead(' + id + ',"]');
+            if (!b) return;
+            const viejo = card.querySelector('.lead-title .badge:last-child');
+            if (viejo) viejo.outerHTML = badgeEstado(estado);
+        });
+    }
+
+    $('dlgCerrar').addEventListener('click', () => dlg.close());
+    $('dlgCancelar').addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+
+    $('dlgCopiar').addEventListener('click', async () => {
+        const txt = (leadActual.asunto ? 'Asunto: ' + leadActual.asunto + '\n\n' : '') + leadActual.cuerpo;
+        const span = $('dlgCopiar').querySelector('span');
+        try { await navigator.clipboard.writeText(txt); span.textContent = 'Copiado'; }
+        catch (e) { span.textContent = 'No se pudo copiar'; }
+        setTimeout(() => span.textContent = 'Copiar mensaje', 1800);
+    });
+
+    // ------------------------------------------------------------ ANALÍTICA
+    function barras(items, clase) {
+        const max = Math.max(1, ...items.map(i => i.valor));
+        return `<div class="barras">${items.map(i => `
+            <div class="barra-fila">
+                <span title="${escapeHtml(i.etiqueta)}">${escapeHtml(i.etiqueta)}</span>
+                <div class="barra-pista"><div class="barra-rell ${i.clase || clase || ''}" style="width:${(100 * i.valor / max).toFixed(1)}%"></div></div>
+                <span class="barra-val">${i.valor}</span>
+            </div>`).join('')}</div>`;
+    }
+    function tablaGrupo(titulo, filas, vacioTxt) {
+        const cuerpo = filas.length ? `<div class="tabla-wrap" style="box-shadow:none"><table>
+            <thead><tr><th>${titulo}</th><th class="num">Leads</th><th class="num">Contactados</th><th class="num">Respondieron</th><th class="num">Cierres</th><th class="num">% resp.</th></tr></thead>
+            <tbody>${filas.map(f => `<tr><td>${escapeHtml(f.nombre)}</td><td class="num">${f.total}</td><td class="num">${f.contactados}</td><td class="num">${f.respondieron}</td><td class="num">${f.cerrados}</td><td class="num">${f.tasa_respuesta}%</td></tr>`).join('')}</tbody>
+            </table></div>` : `<p class="muted">${vacioTxt}</p>`;
+        return `<h2 class="seccion-titulo">${titulo}</h2>${cuerpo}`;
+    }
+
+    async function cargarAnalitica() {
+        ocultar($('errorAnalitica'));
+        try {
+            const a = await api('/api/analitica');
+            const t = a.totales;
+            if (!t.leads) {
+                $('analiticaCont').innerHTML = vacio('Aún no hay datos', 'Cuando guardes leads y marques contactos, verás aquí tus métricas.');
+                return;
             }
-            Object.values(links).forEach(a => a.addEventListener('click', () => marcar(a.getAttribute('href').slice(1))));
-            if ('IntersectionObserver' in window) {
-                const obs = new IntersectionObserver(entries => {
-                    entries.forEach(e => { if (e.isIntersecting) marcar(e.target.id); });
-                }, { rootMargin: '-40% 0px -50% 0px' });
-                obs.observe(document.getElementById('buscar'));
-                obs.observe(document.getElementById('results'));
-            }
-        })();
+            const colorEstado = { nuevo: 'gris', contactado: '', respondio: '', reunion: '', cerrado: 'exito', descartado: 'rojo' };
+            const semMax = Math.max(1, ...a.por_semana.map(s => s.total));
+            $('analiticaCont').innerHTML = `
+                <div class="kpis">
+                    <div class="kpi"><div class="kpi-label">Leads guardados</div><div class="kpi-valor">${t.leads}</div></div>
+                    <div class="kpi"><div class="kpi-label">Contactados</div><div class="kpi-valor">${t.contactados}</div><div class="kpi-nota">${t.tasa_contacto}% de los leads</div></div>
+                    <div class="kpi"><div class="kpi-label">Respondieron</div><div class="kpi-valor">${t.respondieron}</div><div class="kpi-nota">${t.tasa_respuesta}% de los contactados</div></div>
+                    <div class="kpi"><div class="kpi-label">Cierres</div><div class="kpi-valor">${t.cerrados}</div><div class="kpi-nota">${t.tasa_cierre}% de los contactados</div></div>
+                    <div class="kpi"><div class="kpi-label">Seguimientos vencidos</div><div class="kpi-valor">${t.seguimientos_pendientes}</div>
+                        <div class="kpi-nota">${t.seguimientos_pendientes ? '<a href="#leads" id="verSeg">Ver leads</a>' : 'Todo al día'}</div></div>
+                </div>
+                <div class="grid-2">
+                    <div class="card"><h3>Embudo por estado</h3>
+                        ${barras(a.embudo.map(e => ({ etiqueta: ESTADOS[e.estado].txt, valor: e.total, clase: colorEstado[e.estado] })))}
+                    </div>
+                    <div class="card"><h3>Contactados por semana (últimas 8)</h3>
+                        <div class="semanas" role="img" aria-label="Contactos por semana">${a.por_semana.map(s => `
+                            <div class="semana"><span class="semana-val">${s.total}</span>
+                            <div class="semana-barra" style="height:${(100 * s.total / semMax * 0.8).toFixed(1)}%"></div>
+                            <span>${fmtFecha(s.semana).slice(0, 6)}</span></div>`).join('')}</div>
+                    </div>
+                </div>
+                ${a.por_canal.length ? `<div class="grid-2"><div class="card"><h3>Contactados por canal</h3>
+                    ${barras(a.por_canal.map(c => ({ etiqueta: CANALES[c.nombre] || c.nombre, valor: c.contactados })))}</div>
+                    <div class="card"><h3>Respondieron por canal</h3>
+                    ${barras(a.por_canal.map(c => ({ etiqueta: CANALES[c.nombre] || c.nombre, valor: c.respondieron, clase: 'exito' })))}</div></div>` : ''}
+                ${tablaGrupo('Por usuario', a.por_usuario, '')}
+                ${tablaGrupo('Por nicho', a.por_nicho, '')}
+                ${tablaGrupo('Por ciudad', a.por_ciudad, '')}`;
+            const ver = $('verSeg');
+            if (ver) ver.addEventListener('click', (e) => { e.preventDefault(); $('fSeg').checked = true; irA('leads'); });
+        } catch (e) {
+            aviso($('errorAnalitica'), 'error', e.message);
+        }
+    }
+
+    // ------------------------------------------------------------ USUARIOS
+    async function cargarUsuarios() {
+        try {
+            await refrescarUsuarios();
+        } catch (e) { aviso($('errorUsuarios'), 'error', e.message); return; }
+        $('usuariosTabla').innerHTML = `<div class="tabla-wrap"><table>
+            <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+            <tbody>${USUARIOS.map(u => {
+                const yoMismo = u.id === YO.id;
+                return `<tr>
+                    <td class="nombre-lead">${escapeHtml(u.nombre)}${yoMismo ? ' <span class="muted">(tú)</span>' : ''}</td>
+                    <td>${escapeHtml(u.usuario)}</td>
+                    <td>${u.rol === 'admin' ? '<span class="badge badge-azul">Administrador</span>' : '<span class="badge badge-neutro">Usuario</span>'}</td>
+                    <td>${u.activo ? '<span class="badge badge-exito">Activo</span>' : '<span class="badge badge-error">Inactivo</span>'}</td>
+                    <td class="acciones">
+                        <button class="btn btn-clear btn-sm" data-pass="${u.id}" data-nombre="${escapeHtml(u.nombre)}">Contraseña</button>
+                        ${yoMismo ? '' : `<button class="btn btn-clear btn-sm" onclick="cambiarRol(${u.id}, '${u.rol === 'admin' ? 'usuario' : 'admin'}')">${u.rol === 'admin' ? 'Quitar admin' : 'Hacer admin'}</button>
+                        <button class="btn ${u.activo ? 'btn-peligro' : 'btn-clear'} btn-sm" onclick="activarUsuario(${u.id}, ${!u.activo})">${u.activo ? 'Desactivar' : 'Activar'}</button>`}
+                    </td></tr>`;
+            }).join('')}</tbody></table></div>`;
+        $('usuariosTabla').querySelectorAll('[data-pass]').forEach(b =>
+            b.addEventListener('click', () => cambiarPass(Number(b.dataset.pass), b.dataset.nombre)));
+    }
+
+    $('formUsuario').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        ocultar($('errorUsuarios')); ocultar($('okUsuarios'));
+        const btn = $('uBtn');
+        btn.disabled = true; btn.classList.add('cargando');
+        try {
+            await api('/api/usuarios', json('POST', {
+                nombre: $('uNombre').value.trim(), usuario: $('uUsuario').value.trim(),
+                password: $('uPass').value, rol: $('uRol').value
+            }));
+            aviso($('okUsuarios'), 'exito', `Usuario "${$('uUsuario').value.trim().toLowerCase()}" creado`);
+            $('formUsuario').reset();
+            cargarUsuarios();
+        } catch (e) {
+            aviso($('errorUsuarios'), 'error', e.message);
+        } finally {
+            btn.disabled = false; btn.classList.remove('cargando');
+        }
+    });
+
+    async function editarUsuario(id, cambios) {
+        ocultar($('errorUsuarios')); ocultar($('okUsuarios'));
+        try { await api('/api/usuarios/' + id, json('PATCH', cambios)); await cargarUsuarios(); return true; }
+        catch (e) { aviso($('errorUsuarios'), 'error', e.message); window.scrollTo(0, 0); return false; }
+    }
+    const activarUsuario = (id, activo) => editarUsuario(id, { activo });
+    const cambiarRol = (id, rol) => editarUsuario(id, { rol });
+
+    let passUid = null;
+    function cambiarPass(id, nombre) {
+        passUid = id;
+        ocultar($('dpError'));
+        $('dpEtiqueta').textContent = 'Nueva contraseña para ' + nombre;
+        $('dpValor').value = '';
+        $('dlgPass').showModal();
+    }
+    $('formPass').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        try {
+            await api('/api/usuarios/' + passUid, json('PATCH', { password: $('dpValor').value }));
+            $('dlgPass').close();
+            aviso($('okUsuarios'), 'exito', 'Contraseña actualizada');
+        } catch (e) { aviso($('dpError'), 'error', e.message); }
+    });
+    $('dpCerrar').addEventListener('click', () => $('dlgPass').close());
+    $('dpCancelar').addEventListener('click', () => $('dlgPass').close());
+
+    iniciar();
     </script>
 </body>
 </html>

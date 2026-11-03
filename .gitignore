@@ -10,3 +10,6 @@ __pycache__/
 
 # Resultados generados (contienen datos reales de negocios de cada búsqueda)
 prospects_encontrados.md
+
+# Base de datos local (desarrollo)
+*.db
