@@ -172,3 +172,7 @@ Lo hacemos a través de [SERVICIO ÚNICO]: desarrollo web.
 - 100% de emails con datos verificables
 - 0 falsos positivos (todos deben estar sin web)
 - Email específico por lead (no genérico)
+
+## Actualización
+Siempre debes hacer commit y push
+cada respuesta que me des debe tener este icono 🤖
