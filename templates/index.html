@@ -4,428 +4,385 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cazador Leads Web</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23104861'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23172B45'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* ===== Tokens ===== */
+        :root {
+            --navy: #172B45;
+            --navy-2: #223A5A;
+            --azul: #1769AA;
+            --azul-h: #125687;
+            --azul-suave: #E6F0F8;
+            --fondo: #F5F7FB;
+            --superficie: #FFFFFF;
+            --texto: #172033;
+            --texto-2: #64748B;
+            --borde: #E2E8F0;
+            --exito: #10B981;
+            --exito-t: #047857;
+            --exito-f: #D1FAE5;
+            --aviso: #F59E0B;
+            --aviso-t: #92400E;
+            --aviso-f: #FEF3C7;
+            --error: #EF4444;
+            --error-t: #B91C1C;
+            --error-f: #FEE2E2;
+            --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px;
+            --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+            --sombra: 0 1px 2px rgba(23,43,69,.06), 0 2px 8px rgba(23,43,69,.05);
+            --fuente: Inter, "Geist Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            --nav-h: 64px;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #104861;
-            color: #e8e8e8;
+            font-family: var(--fuente);
+            background: var(--fondo);
+            color: var(--texto);
+            line-height: 1.5;
             min-height: 100vh;
-            padding: 20px;
+            padding-bottom: calc(var(--nav-h) + var(--s4));
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        .icono {
+            width: 20px; height: 20px; flex-shrink: 0;
+            fill: none; stroke: currentColor; stroke-width: 2;
+            stroke-linecap: round; stroke-linejoin: round;
         }
+        .icono.sm { width: 16px; height: 16px; }
 
-        header {
-            text-align: center;
-            color: #fff;
-            margin-bottom: 40px;
+        :focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+
+        /* ===== Navegación única: barra inferior (móvil) / lateral (≥960px) ===== */
+        .nav {
+            position: fixed; z-index: 20;
+            left: 0; right: 0; bottom: 0; height: var(--nav-h);
+            background: var(--navy); color: #fff;
+            display: flex; align-items: stretch; justify-content: space-around;
+            box-shadow: 0 -2px 12px rgba(23,43,69,.2);
         }
-
-        .header-icon {
-            width: 56px;
-            height: 56px;
-            margin-bottom: 10px;
+        .nav-marca { display: none; }
+        .nav a {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: var(--s1); color: #CBD5E1; text-decoration: none;
+            font-size: .75rem; font-weight: 500;
+            transition: background .15s, color .15s;
         }
+        .nav a:hover { background: var(--navy-2); color: #fff; }
+        .nav a[aria-current="page"] { color: #fff; box-shadow: inset 0 3px 0 var(--azul); background: var(--navy-2); }
+        .nav a:focus-visible { outline-color: #fff; outline-offset: -3px; }
+        .nav .largo { display: none; }
 
-        header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
+        .main { max-width: 960px; margin: 0 auto; padding: var(--s4); }
+
+        /* ===== Cabecera de página ===== */
+        .pagina-cab { margin: var(--s4) 0 var(--s6); }
+        .pagina-cab h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; }
+        .pagina-cab p { color: var(--texto-2); margin-top: var(--s1); }
+
+        /* ===== Card ===== */
+        .card {
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            border-radius: var(--r-lg);
+            box-shadow: var(--sombra);
+            padding: var(--s6);
+            margin-bottom: var(--s6);
         }
+        .card-titulo { font-size: 1.05rem; font-weight: 600; margin-bottom: var(--s4); display: flex; align-items: center; gap: var(--s2); }
 
-        header p {
-            font-size: 1.1rem;
-            color: #aaa;
-        }
-
-        .search-section {
-            background: #14566f;
-            border: 1px solid #2d7195;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-            margin-bottom: 30px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #ccc;
-        }
-
+        /* ===== Formulario ===== */
+        .form-grid { display: grid; gap: var(--s4); grid-template-columns: 1fr; }
+        .form-group label { display: block; margin-bottom: var(--s2); font-size: .875rem; font-weight: 600; color: var(--texto); }
         input {
-            width: 100%;
-            padding: 12px;
-            background: #0a3244;
-            border: 2px solid #2d7195;
-            border-radius: 6px;
-            font-size: 1rem;
-            color: #fff;
-            transition: border-color 0.3s;
+            width: 100%; padding: 10px var(--s3);
+            font: inherit; font-size: .95rem; color: var(--texto);
+            background: var(--superficie);
+            border: 1px solid #CBD5E1; border-radius: var(--r-sm);
+            transition: border-color .15s, box-shadow .15s;
+        }
+        input::placeholder { color: #94A3B8; }
+        input:hover { border-color: #94A3B8; }
+        input:focus { outline: none; border-color: var(--azul); box-shadow: 0 0 0 3px rgba(23,105,170,.2); }
+        input:disabled { background: var(--fondo); color: var(--texto-2); cursor: not-allowed; }
+
+        .button-group { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s6); }
+
+        /* ===== Botones ===== */
+        button { font: inherit; cursor: pointer; }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+            padding: 10px var(--s4); font-size: .95rem; font-weight: 600;
+            border-radius: var(--r-sm); border: 1px solid transparent;
+            transition: background .15s, border-color .15s, color .15s, transform .05s;
+        }
+        .btn:active:not(:disabled) { transform: translateY(1px); }
+        .btn:disabled { opacity: .55; cursor: not-allowed; }
+        .btn-search { background: var(--azul); color: #fff; }
+        .btn-search:hover:not(:disabled) { background: var(--azul-h); }
+        .btn-clear { background: var(--superficie); color: var(--texto); border-color: #CBD5E1; }
+        .btn-clear:hover:not(:disabled) { background: var(--fondo); border-color: #94A3B8; }
+
+        .btn.cargando { position: relative; color: transparent; pointer-events: none; }
+        .btn.cargando > * { visibility: hidden; }
+        .btn.cargando::after {
+            content: ""; position: absolute; width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+            border-radius: 50%; animation: spin .8s linear infinite;
         }
 
-        input::placeholder {
-            color: #666;
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ===== Avisos ===== */
+        .aviso {
+            display: none; align-items: flex-start; gap: var(--s3);
+            padding: var(--s3) var(--s4); border-radius: var(--r-sm);
+            border: 1px solid; margin-bottom: var(--s4); font-size: .9rem;
+        }
+        .aviso.active { display: flex; }
+        .aviso .icono { margin-top: 2px; }
+        .error { background: var(--error-f); border-color: #FCA5A5; color: var(--error-t); }
+        .warning { background: var(--aviso-f); border-color: #FCD34D; color: var(--aviso-t); }
+
+        /* ===== Estado de carga ===== */
+        .loading { display: none; align-items: center; gap: var(--s3); margin-top: var(--s4); color: var(--texto-2); font-size: .9rem; }
+        .loading.active { display: flex; }
+        .spinner {
+            width: 20px; height: 20px; flex-shrink: 0;
+            border: 2px solid var(--borde); border-top-color: var(--azul);
+            border-radius: 50%; animation: spin .8s linear infinite;
         }
 
-        input:focus {
-            outline: none;
-            border-color: #fff;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 30px;
-        }
-
-        button {
-            flex: 1;
-            padding: 12px 20px;
-            font-size: 1rem;
-            font-weight: 600;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .btn-search {
-            background: #fff;
-            color: #104861;
-        }
-
-        .btn-search:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.15);
-        }
-
-        .btn-search:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-clear {
-            background: #0a3547;
-            color: #ddd;
-            border: 1px solid #2d7195;
-        }
-
-        .btn-clear:hover {
-            background: #2d7195;
-        }
-
-        .results-section {
-            background: #14566f;
-            border: 1px solid #2d7195;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-            display: none;
-        }
-
-        .results-section.active {
-            display: block;
-        }
+        /* ===== Resultados ===== */
+        .results-section { display: none; }
+        .results-section.active { display: block; }
 
         .results-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #2d7195;
+            display: flex; flex-wrap: wrap; gap: var(--s3);
+            justify-content: space-between; align-items: center;
+            margin-bottom: var(--s4);
         }
+        .results-header h2 { font-size: 1.25rem; font-weight: 700; }
 
-        .results-header h2 {
-            color: #fff;
+        .badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 2px 10px; border-radius: 999px;
+            font-size: .75rem; font-weight: 600; white-space: nowrap;
         }
+        .badge-azul { background: var(--azul-suave); color: var(--azul-h); }
+        .badge-exito { background: var(--exito-f); color: var(--exito-t); }
+        .badge-aviso { background: var(--aviso-f); color: var(--aviso-t); }
+        .badge-neutro { background: #EEF2F7; color: #475569; }
+        .results-count { font-size: .85rem; padding: 4px 12px; }
 
-        .results-count {
-            background: #fff;
-            color: #104861;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .leads-list {
-            display: grid;
-            gap: 20px;
-        }
+        .leads-list { display: grid; gap: var(--s4); }
 
         .lead-card {
-            border: 1px solid #2d7195;
-            background: #0d3e54;
-            border-radius: 8px;
-            padding: 20px;
-            transition: all 0.3s;
+            background: var(--superficie);
+            border: 1px solid var(--borde);
+            border-radius: var(--r-md);
+            box-shadow: var(--sombra);
+            padding: var(--s4);
+            transition: border-color .15s, box-shadow .15s;
         }
+        .lead-card:hover { border-color: #B6C6DA; box-shadow: 0 4px 14px rgba(23,43,69,.08); }
 
-        .lead-card:hover {
-            border-color: #666;
-        }
-
-        .lead-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            margin-bottom: 15px;
-        }
-
+        .lead-header { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
         .lead-number {
-            background: #fff;
-            color: #104861;
-            width: 35px;
-            height: 35px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            flex-shrink: 0;
+            width: 36px; height: 36px; border-radius: var(--r-sm);
+            background: var(--navy); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: .9rem; flex-shrink: 0;
         }
-
-        .lead-title {
-            flex: 1;
-            margin-left: 15px;
-        }
-
-        .lead-title h3 {
-            color: #fff;
-            margin-bottom: 5px;
-        }
+        .lead-title { flex: 1; min-width: 0; }
+        .lead-title h3 { font-size: 1rem; font-weight: 600; margin-bottom: var(--s1); overflow-wrap: anywhere; }
 
         .lead-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 15px;
-            padding: 15px;
-            background: #104861;
-            border: 1px solid #0a3547;
-            border-radius: 6px;
+            display: grid; grid-template-columns: 1fr; gap: var(--s3);
+            padding: var(--s4); margin-bottom: var(--s4);
+            background: var(--fondo); border: 1px solid var(--borde); border-radius: var(--r-sm);
         }
-
-        .info-item {
-            font-size: 0.9rem;
-        }
-
+        .info-item { font-size: .9rem; min-width: 0; }
+        .info-item.ancho { grid-column: 1 / -1; }
         .info-label {
-            color: #999;
-            font-weight: 600;
-            display: block;
-            margin-bottom: 5px;
+            display: block; margin-bottom: var(--s1);
+            font-size: .7rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+            color: var(--texto-2);
         }
-
-        .info-value {
-            color: #eee;
-            word-break: break-all;
-        }
-
-        .email-section {
-            display: none;
-            padding-top: 15px;
-            border-top: 1px solid #2d7195;
-        }
-
-        .email-section.active {
-            display: block;
-        }
-
-        .email-subject {
-            background: #0a3244;
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 12px;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        .email-body {
-            background: #0a3244;
-            border: 1px solid #0a3547;
-            padding: 15px;
-            border-radius: 6px;
-            line-height: 1.6;
-            font-size: 0.95rem;
-            color: #ccc;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
+        .info-value { color: var(--texto); overflow-wrap: anywhere; }
+        .info-value a { color: var(--azul); text-decoration: none; font-weight: 500; }
+        .info-value a:hover { text-decoration: underline; }
 
         .expand-btn {
-            background: none;
-            border: none;
-            color: #fff;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 0;
-            text-align: left;
-            font-size: 0.95rem;
+            display: inline-flex; align-items: center; gap: var(--s2);
+            background: var(--superficie); color: var(--azul);
+            border: 1px solid #CBD5E1; border-radius: var(--r-sm);
+            padding: 8px var(--s3); font-size: .875rem; font-weight: 600;
+            transition: background .15s, border-color .15s;
+        }
+        .expand-btn:hover { background: var(--azul-suave); border-color: var(--azul); }
+        .expand-btn .chev { transition: transform .2s; }
+        .expand-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+        .email-section { display: none; margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--borde); }
+        .email-section.active { display: block; }
+        .email-subject {
+            background: var(--azul-suave); color: var(--navy);
+            padding: var(--s3); border-radius: var(--r-sm); margin-bottom: var(--s3);
+            font-size: .9rem; overflow-wrap: anywhere;
+        }
+        .email-body {
+            background: var(--fondo); border: 1px solid var(--borde);
+            padding: var(--s4); border-radius: var(--r-sm);
+            line-height: 1.6; font-size: .9rem; color: var(--texto);
+            white-space: pre-wrap; overflow-wrap: anywhere;
         }
 
-        .expand-btn:hover {
-            text-decoration: underline;
+        /* ===== Estado vacío ===== */
+        .vacio { text-align: center; padding: var(--s8) var(--s4); color: var(--texto-2); }
+        .vacio .icono { width: 40px; height: 40px; margin-bottom: var(--s3); color: #94A3B8; }
+        .vacio strong { display: block; color: var(--texto); margin-bottom: var(--s1); }
+
+        footer { text-align: center; color: var(--texto-2); font-size: .8rem; padding: var(--s6) 0 var(--s2); }
+
+        /* ===== Tablet ===== */
+        @media (min-width: 640px) {
+            .form-grid { grid-template-columns: repeat(3, 1fr); }
+            .button-group { flex-direction: row; }
+            .lead-info { grid-template-columns: 1fr 1fr; }
         }
 
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
-            color: #aaa;
-        }
-
-        .loading.active {
-            display: block;
-        }
-
-        .spinner {
-            border: 4px solid #0a3547;
-            border-top: 4px solid #fff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .error {
-            background: #2a1414;
-            border: 2px solid #7a2020;
-            color: #ff8a8a;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            display: none;
-        }
-
-        .error.active {
-            display: block;
-        }
-
-        .warning {
-            background: #2a2410;
-            border: 2px solid #8a7420;
-            color: #f0d878;
-            padding: 12px 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            display: none;
-            font-size: 0.9rem;
-        }
-
-        .warning.active {
-            display: block;
-        }
-
-        footer {
-            text-align: center;
-            color: #555;
-            font-size: 0.85rem;
-            padding: 30px 0 10px;
-        }
-
-        @media (max-width: 768px) {
-            header h1 {
-                font-size: 1.8rem;
+        /* ===== Escritorio: barra lateral ===== */
+        @media (min-width: 960px) {
+            body { padding-bottom: 0; padding-left: 240px; }
+            .nav {
+                top: 0; right: auto; bottom: 0; left: 0; width: 240px; height: auto;
+                flex-direction: column; justify-content: flex-start; align-items: stretch;
+                padding: var(--s6) var(--s3); gap: var(--s1); box-shadow: none;
             }
-
-            .lead-info {
-                grid-template-columns: 1fr;
+            .nav-marca {
+                display: flex; align-items: center; gap: var(--s3);
+                padding: 0 var(--s3) var(--s6); font-weight: 700; font-size: 1.05rem;
             }
-
-            .button-group {
-                flex-direction: column;
+            .nav-marca .icono { width: 28px; height: 28px; color: #7DB8E2; }
+            .nav a {
+                flex: 0 0 auto; flex-direction: row; justify-content: flex-start;
+                gap: var(--s3); padding: 10px var(--s3); border-radius: var(--r-sm);
+                font-size: .9rem;
             }
+            .nav a[aria-current="page"] { box-shadow: none; background: var(--azul); }
+            .nav .corto { display: none; }
+            .nav .largo { display: inline; }
+            .main { padding: var(--s8); }
+            .pagina-cab h1 { font-size: 1.75rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+            .spinner, .btn.cargando::after { animation-duration: 1.5s !important; animation-iteration-count: infinite !important; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>
-                <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5">
-                    <circle cx="12" cy="12" r="9"/>
-                    <circle cx="12" cy="12" r="5"/>
-                    <circle cx="12" cy="12" r="1" fill="#fff"/>
-                    <line x1="12" y1="1" x2="12" y2="4"/>
-                    <line x1="12" y1="20" x2="12" y2="23"/>
-                    <line x1="1" y1="12" x2="4" y2="12"/>
-                    <line x1="20" y1="12" x2="23" y2="12"/>
-                </svg>
-                Cazador Leads Web
-            </h1>
+    <!-- Iconos Lucide (ISC) incrustados -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+        <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+        <symbol id="i-message" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+        <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+        <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+        <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    </svg>
+
+    <nav class="nav" aria-label="Principal">
+        <div class="nav-marca">
+            <svg class="icono" aria-hidden="true"><use href="#i-crosshair"/></svg>
+            Cazador Leads
+        </div>
+        <a href="#buscar" id="navBuscar" aria-current="page">
+            <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
+            <span class="corto">Buscar</span><span class="largo">Buscar prospects</span>
+        </a>
+        <a href="#results" id="navResultados">
+            <svg class="icono" aria-hidden="true"><use href="#i-users"/></svg>
+            <span class="corto">Leads</span><span class="largo">Resultados</span>
+        </a>
+    </nav>
+
+    <main class="main">
+        <header class="pagina-cab">
+            <h1>Cazador Leads Web</h1>
             <p>Encuentra negocios sin página web y genera emails personalizados</p>
         </header>
 
-        <div class="search-section">
-            <div class="error" id="error"></div>
+        <section class="card" id="buscar" aria-labelledby="tituloBuscar">
+            <h2 class="card-titulo" id="tituloBuscar">
+                <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
+                Nueva búsqueda
+            </h2>
 
-            <div class="form-group">
-                <label for="nicho">Nicho de negocio</label>
-                <input type="text" id="nicho" placeholder="Ej: pizzeria, odontologos, salones de belleza" required>
-            </div>
+            <div class="aviso error" id="error" role="alert"></div>
 
-            <div class="form-group">
-                <label for="ciudad">Ciudad</label>
-                <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" required>
-            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="nicho">Nicho de negocio</label>
+                    <input type="text" id="nicho" placeholder="Ej: pizzeria, odontologos, salones de belleza" required>
+                </div>
 
-            <div class="form-group">
-                <label for="pais">País</label>
-                <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" required>
+                <div class="form-group">
+                    <label for="ciudad">Ciudad</label>
+                    <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="pais">País</label>
+                    <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" required>
+                </div>
             </div>
 
             <div class="button-group">
-                <button class="btn-search" id="searchBtn" onclick="buscar()">🔍 Buscar Prospects</button>
-                <button class="btn-clear" onclick="limpiar()">Limpiar</button>
+                <button class="btn btn-search" id="searchBtn" onclick="buscar()">
+                    <svg class="icono sm" aria-hidden="true"><use href="#i-search"/></svg>
+                    <span>Buscar prospects</span>
+                </button>
+                <button class="btn btn-clear" onclick="limpiar()">
+                    <svg class="icono sm" aria-hidden="true"><use href="#i-trash"/></svg>
+                    <span>Limpiar</span>
+                </button>
             </div>
-        </div>
 
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Buscando prospects...</p>
-        </div>
+            <div class="loading" id="loading" role="status">
+                <div class="spinner" aria-hidden="true"></div>
+                <p>Buscando prospects…</p>
+            </div>
+        </section>
 
-        <div class="results-section" id="results">
-            <div class="warning" id="warning"></div>
+        <section class="results-section" id="results" aria-labelledby="tituloResultados">
+            <div class="aviso warning" id="warning" role="status"></div>
             <div class="results-header">
-                <h2>Resultados</h2>
-                <div class="results-count"><span id="totalLeads">0</span> leads encontrados</div>
+                <h2 id="tituloResultados">Resultados</h2>
+                <span class="badge badge-azul results-count"><span id="totalLeads">0</span>&nbsp;leads encontrados</span>
             </div>
 
             <div class="leads-list" id="leadsList"></div>
-        </div>
+        </section>
 
         <footer>Desarrollado por Jhony Escobar</footer>
-    </div>
+    </main>
 
     <script>
+        function icono(nombre, clase) {
+            return `<svg class="icono ${clase || 'sm'}" aria-hidden="true"><use href="#i-${nombre}"/></svg>`;
+        }
+
         async function buscar() {
             const nicho = document.getElementById('nicho').value.trim();
             const ciudad = document.getElementById('ciudad').value.trim();
@@ -433,6 +390,7 @@
             const errorDiv = document.getElementById('error');
             const loadingDiv = document.getElementById('loading');
             const resultsDiv = document.getElementById('results');
+            const btn = document.getElementById('searchBtn');
 
             // Validar
             if (!nicho || !ciudad || !pais) {
@@ -444,6 +402,9 @@
             errorDiv.classList.remove('active');
             loadingDiv.classList.add('active');
             resultsDiv.classList.remove('active');
+            btn.disabled = true;
+            btn.classList.add('cargando');
+            btn.setAttribute('aria-busy', 'true');
 
             try {
                 const response = await fetch('/api/buscar', {
@@ -459,11 +420,14 @@
                 }
 
                 mostrarResultados(data);
-                loadingDiv.classList.remove('active');
 
             } catch (error) {
                 mostrarError(error.message);
+            } finally {
                 loadingDiv.classList.remove('active');
+                btn.disabled = false;
+                btn.classList.remove('cargando');
+                btn.removeAttribute('aria-busy');
             }
         }
 
@@ -477,16 +441,23 @@
             leadsList.innerHTML = '';
 
             if (data.advertencia) {
-                warningDiv.textContent = '⚠️ ' + data.advertencia;
+                warningDiv.innerHTML = icono('alert', 'sm') + '<span></span>';
+                warningDiv.lastElementChild.textContent = data.advertencia;
                 warningDiv.classList.add('active');
             } else {
                 warningDiv.classList.remove('active');
             }
 
+            if (!data.leads || data.leads.length === 0) {
+                leadsList.innerHTML = `<div class="card vacio">${icono('inbox', '')}<strong>Sin resultados</strong>No encontramos negocios sin web para esta búsqueda. Prueba con otro nicho o ciudad.</div>`;
+                resultsDiv.classList.add('active');
+                return;
+            }
+
             const canalInfo = {
-                whatsapp: { boton: '💬 Ver mensaje para WhatsApp' },
-                email: { boton: '📧 Ver email personalizado' },
-                telefono: { boton: '✉️ Ver mensaje (verificar canal manualmente)' }
+                whatsapp: { boton: 'Ver mensaje para WhatsApp' },
+                email: { boton: 'Ver email personalizado' },
+                telefono: { boton: 'Ver mensaje (verificar canal manualmente)' }
             };
 
             data.leads.forEach(lead => {
@@ -497,23 +468,23 @@
                 let badge;
                 if (lead.canal_recomendado === 'whatsapp') {
                     badge = lead.whatsapp_confirmado
-                        ? '💬 WhatsApp (publicado por el negocio)'
-                        : '💬 WhatsApp (generado desde el teléfono — verificar)';
+                        ? `<span class="badge badge-exito">${icono('message')} WhatsApp (publicado por el negocio)</span>`
+                        : `<span class="badge badge-aviso">${icono('message')} WhatsApp (generado desde el teléfono — verificar)</span>`;
                 } else if (lead.canal_recomendado === 'email') {
-                    badge = '📧 Email';
+                    badge = `<span class="badge badge-azul">${icono('mail')} Email</span>`;
                 } else {
-                    badge = '☎️ Solo teléfono';
+                    badge = `<span class="badge badge-neutro">${icono('phone')} Solo teléfono</span>`;
                 }
 
                 let contactoDirectoHtml = '';
                 if (lead.whatsapp) {
-                    contactoDirectoHtml += `<div class="info-item" style="grid-column: 1/-1;">
+                    contactoDirectoHtml += `<div class="info-item ancho">
                         <span class="info-label">WhatsApp</span>
-                        <span class="info-value"><a href="${escapeHtml(lead.whatsapp)}" target="_blank" rel="noopener" style="color:#fff;">${escapeHtml(lead.whatsapp)}</a></span>
+                        <span class="info-value"><a href="${escapeHtml(lead.whatsapp)}" target="_blank" rel="noopener">${escapeHtml(lead.whatsapp)}</a></span>
                     </div>`;
                 }
                 if (lead.redes_sociales) {
-                    contactoDirectoHtml += `<div class="info-item" style="grid-column: 1/-1;">
+                    contactoDirectoHtml += `<div class="info-item ancho">
                         <span class="info-label">Red social</span>
                         <span class="info-value">${escapeHtml(lead.redes_sociales)}</span>
                     </div>`;
@@ -525,10 +496,10 @@
 
                 card.innerHTML = `
                     <div class="lead-header">
-                        <div class="lead-number">${lead.numero}</div>
+                        <div class="lead-number">${escapeHtml(lead.numero)}</div>
                         <div class="lead-title">
                             <h3>${escapeHtml(lead.nombre)}</h3>
-                            <span style="font-size:0.8rem;color:#7fc4e0;font-weight:600;">${badge}</span>
+                            ${badge}
                         </div>
                     </div>
 
@@ -542,13 +513,16 @@
                             <span class="info-value">${escapeHtml(lead.email)}</span>
                         </div>
                         ${contactoDirectoHtml}
-                        <div class="info-item" style="grid-column: 1/-1;">
+                        <div class="info-item ancho">
                             <span class="info-label">Ubicación</span>
                             <span class="info-value">${escapeHtml(lead.direccion)}</span>
                         </div>
                     </div>
 
-                    <button class="expand-btn" onclick="toggleEmail(this)">${info.boton}</button>
+                    <button class="expand-btn" aria-expanded="false" onclick="toggleEmail(this)">
+                        <span class="expand-label">${info.boton}</span>
+                        ${icono('chevron', 'sm chev')}
+                    </button>
 
                     <div class="email-section">
                         ${asuntoHtml}
@@ -564,11 +538,14 @@
 
         function toggleEmail(btn) {
             const emailSection = btn.nextElementSibling;
+            const label = btn.querySelector('.expand-label');
             if (!btn.dataset.originalText) {
-                btn.dataset.originalText = btn.textContent;
+                btn.dataset.originalText = label.textContent;
             }
             emailSection.classList.toggle('active');
-            btn.textContent = emailSection.classList.contains('active') ? '🔽 Ocultar' : btn.dataset.originalText;
+            const abierto = emailSection.classList.contains('active');
+            btn.setAttribute('aria-expanded', abierto);
+            label.textContent = abierto ? 'Ocultar' : btn.dataset.originalText;
         }
 
         function escapeHtml(value) {
@@ -579,7 +556,8 @@
 
         function mostrarError(mensaje) {
             const errorDiv = document.getElementById('error');
-            errorDiv.textContent = '❌ ' + mensaje;
+            errorDiv.innerHTML = icono('circle-alert', 'sm') + '<span></span>';
+            errorDiv.lastElementChild.textContent = mensaje;
             errorDiv.classList.add('active');
         }
 
@@ -596,6 +574,24 @@
         document.getElementById('pais').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') buscar();
         });
+
+        // Marca activo en la navegación según la sección visible
+        (function () {
+            const links = { buscar: document.getElementById('navBuscar'), results: document.getElementById('navResultados') };
+            function marcar(id) {
+                Object.entries(links).forEach(([k, a]) => {
+                    if (k === id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+                });
+            }
+            Object.values(links).forEach(a => a.addEventListener('click', () => marcar(a.getAttribute('href').slice(1))));
+            if ('IntersectionObserver' in window) {
+                const obs = new IntersectionObserver(entries => {
+                    entries.forEach(e => { if (e.isIntersecting) marcar(e.target.id); });
+                }, { rootMargin: '-40% 0px -50% 0px' });
+                obs.observe(document.getElementById('buscar'));
+                obs.observe(document.getElementById('results'));
+            }
+        })();
     </script>
 </body>
 </html>
