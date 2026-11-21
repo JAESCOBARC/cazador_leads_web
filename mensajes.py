@@ -11,6 +11,7 @@ import os
 import re
 from urllib.parse import urlparse
 
+import ajustes
 from escaner import OPORTUNIDADES, ORDEN_ANGULOS
 
 MAX_PALABRAS = 150
@@ -32,11 +33,11 @@ def _dominio(url):
 
 def _remitente():
     return {
-        "nombre": os.getenv("REMITENTE_NOMBRE") or "[TU NOMBRE]",
-        "cargo": os.getenv("REMITENTE_CARGO") or "[TU CARGO]",
-        "agencia": os.getenv("AGENCIA_NOMBRE") or "[TU AGENCIA]",
-        "contacto": os.getenv("REMITENTE_CONTACTO") or "[TU EMAIL / TELÉFONO]",
-        "caso": (os.getenv("CASO_EXITO") or "").strip(),
+        "nombre": ajustes.obtener("REMITENTE_NOMBRE") or "[TU NOMBRE]",
+        "cargo": ajustes.obtener("REMITENTE_CARGO") or "[TU CARGO]",
+        "agencia": ajustes.obtener("AGENCIA_NOMBRE") or "[TU AGENCIA]",
+        "contacto": ajustes.obtener("REMITENTE_CONTACTO") or "[TU EMAIL / TELÉFONO]",
+        "caso": (ajustes.obtener("CASO_EXITO") or "").strip(),
     }
 
 

@@ -20,6 +20,8 @@ from email.message import EmailMessage
 
 import requests
 
+import ajustes
+
 _EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[A-Za-z]{2,}$")
 
 
@@ -27,44 +29,31 @@ class CorreoError(Exception):
     pass
 
 
-def _secretos():
-    out = set()
-    for k in ("SMTP_CLAVE", "RESEND_API_KEY"):
-        v = os.getenv(k, "").strip()
-        for variante in (v, v.replace(" ", "")):
-            if len(variante) >= 6:
-                out.add(variante)
-    return out
-
-
 def limpiar(texto):
-    """Quita cualquier credencial que aparezca dentro de un mensaje de error."""
-    t = str(texto)
-    for s in sorted(_secretos(), key=len, reverse=True):
-        t = t.replace(s, "***")
-    return t
+    """Quita cualquier credencial (de la app o del entorno) que aparezca dentro de un mensaje de error."""
+    return ajustes.limpiar(texto)
 
 
 def destinatarios():
-    crudos = re.split(r"[;,]", os.getenv("ALERTA_EMAIL_DESTINO", ""))
+    crudos = re.split(r"[;,]", ajustes.obtener("ALERTA_EMAIL_DESTINO"))
     return [c.strip() for c in crudos if _EMAIL.match(c.strip())][:5]
 
 
 def proveedor():
-    if os.getenv("RESEND_API_KEY", "").strip():
+    if ajustes.obtener("RESEND_API_KEY").strip():
         return "resend"
-    if os.getenv("SMTP_HOST", "").strip():
+    if ajustes.obtener("SMTP_HOST").strip():
         return "smtp"
     return None
 
 
 def remitente():
-    r = os.getenv("EMAIL_REMITENTE", "").strip()
+    r = ajustes.obtener("EMAIL_REMITENTE").strip()
     if r:
         return r
     if proveedor() == "resend":
         return "Cazador Leads <onboarding@resend.dev>"
-    return os.getenv("SMTP_USUARIO", "").strip() or "cazador-leads@localhost"
+    return ajustes.obtener("SMTP_USUARIO").strip() or "cazador-leads@localhost"
 
 
 def enmascarar(email):
@@ -77,9 +66,9 @@ def configurado():
 
 
 def _smtp(msg):
-    host = os.getenv("SMTP_HOST", "").strip()
+    host = ajustes.obtener("SMTP_HOST").strip()
     try:
-        puerto = int(os.getenv("SMTP_PUERTO", "587") or 587)
+        puerto = int(ajustes.obtener("SMTP_PUERTO", "587") or 587)
     except ValueError:
         puerto = 587
     seguridad = (os.getenv("SMTP_SEGURIDAD") or ("ssl" if puerto == 465 else "starttls")).strip().lower()
@@ -89,7 +78,7 @@ def _smtp(msg):
         with conexion as s:
             if seguridad == "starttls":
                 s.starttls(context=ctx)
-            usuario, clave = os.getenv("SMTP_USUARIO", "").strip(), os.getenv("SMTP_CLAVE", "").replace(" ", "")
+            usuario, clave = ajustes.obtener("SMTP_USUARIO").strip(), ajustes.obtener("SMTP_CLAVE").replace(" ", "")
             if usuario and clave:
                 s.login(usuario, clave)
             s.send_message(msg)
@@ -101,7 +90,7 @@ def _smtp(msg):
 
 
 def _resend(asunto, texto, html, destinos, reply_to=None):
-    clave = os.getenv("RESEND_API_KEY", "").strip()
+    clave = ajustes.obtener("RESEND_API_KEY").strip()
     try:
         r = requests.post("https://api.resend.com/emails", timeout=15, headers={"Authorization": f"Bearer {clave}"},
                           json={"from": remitente(), "to": destinos, "subject": asunto, "text": texto,

@@ -1,62 +1,64 @@
-# Conectar tu correo a Cazador Leads
+# Conectar tu correo y tus claves (desde la propia app)
 
-El correo se usa para dos cosas:
+Todo se gestiona en **Ajustes** (menú lateral, solo administradores). No hace falta poner nada en Render, salvo `SECRET_KEY` (ver más abajo).
 
-1. **Avisos de cuota**: te escribe cuando el consumo de búsquedas de SerpAPI llega al 80 % del mes (una vez por mes y umbral).
-2. **Propuestas a clientes**: botón «Enviar por email» en cada lead. Siempre manual: un lead a la vez, con vista previa editable, confirmación y registro en el historial.
-
-Las credenciales van **solo en variables de entorno** (`.env` en local, *Environment* en Render). No se guardan en la base de datos, no se muestran en la interfaz y no se comparten con nadie: ni con Claude ni en el chat.
-
-## Opción A — Tu Gmail por SMTP (la más directa)
-
-1. Activa la **verificación en dos pasos** en tu cuenta de Google.
-2. Crea una **contraseña de aplicación**: <https://myaccount.google.com/apppasswords>. Es de 16 letras y distinta de tu contraseña normal; se puede revocar cuando quieras.
-3. Pon en `.env`:
-
-```
-SMTP_HOST=smtp.gmail.com
-SMTP_PUERTO=587
-SMTP_USUARIO=tu_correo@gmail.com
-SMTP_CLAVE=la contraseña de aplicación
-ALERTA_EMAIL_DESTINO=tu_correo@gmail.com
-```
-
-Sirve para escribir a cualquier cliente. Gmail limita el volumen diario, y con el tope de la app (5 correos/día por defecto) vas muy por debajo.
-
-> **Ojo con Render:** según el anuncio de Render de 2025, los servicios del plan gratis no pueden salir por los puertos SMTP (25, 465 y 587). Verifícalo en su documentación. En ese caso, usa la opción B o un plan de pago.
-
-## Opción B — API de Resend (funciona en Render gratis)
-
-1. Crea una cuenta en <https://resend.com> y genera una **API key**.
-2. Pon `RESEND_API_KEY=` (la key) y `ALERTA_EMAIL_DESTINO=` (el email de tu cuenta de Resend).
-3. **Para los avisos de cuota** basta con eso: con el remitente de pruebas (`onboarding@resend.dev`, el valor por defecto) Resend solo permite enviar al email de tu propia cuenta.
-4. **Para escribir a clientes** necesitas **verificar un dominio tuyo** en Resend y poner `EMAIL_REMITENTE=Tu Nombre <hola@tudominio.com>`. Sin dominio verificado, Resend rechazará esos envíos y la app te mostrará el motivo.
-
-## Variables
-
-| Variable | Para qué |
+| Pestaña | Qué configuras |
 |---|---|
-| `ALERTA_EMAIL_DESTINO` | Quién recibe los avisos (uno o varios, separados por coma) |
-| `ALERTA_UMBRALES` | Porcentajes de aviso. Por defecto `80`. Ejemplo: `80,100` |
-| `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CLAVE` | Opción A |
-| `RESEND_API_KEY` | Opción B (tiene prioridad si ambas están definidas) |
-| `EMAIL_REMITENTE` | Nombre y dirección que ve el cliente. Por defecto, tu usuario SMTP |
-| `EMAIL_RESPONDER_A` | Dirección a la que llegan las respuestas, si es distinta |
-| `ENVIO_MAX_DIA` | Tope diario de propuestas enviadas desde la app. Por defecto `5` |
-| `REMITENTE_NOMBRE`, `REMITENTE_CARGO`, `AGENCIA_NOMBRE`, `REMITENTE_CONTACTO` | Firma de los mensajes. **Si falta alguno, la app no deja enviar** (evita que salga un «[TU NOMBRE]») |
-| `APP_URL` | Para incluir el enlace al panel en el aviso (en Render se toma sola) |
+| **Usuarios** | Cuentas del equipo (lo de siempre) |
+| **Motor de búsqueda** | La clave de SerpAPI y las búsquedas de tu plan al mes |
+| **Correo** | Dónde recibes los avisos, y tu Gmail (SMTP) o Resend (API) para enviar |
+| **Remitente y firma** | Tu nombre, cargo, agencia y contacto (van en los mensajes) |
 
-## Cómo comprobar que funciona
+## Seguridad: cómo se guardan las claves
 
-1. Reinicia la app.
-2. **Analítica**: debajo del medidor verás «Aviso por email al 80 %: activo (t***@gmail.com)». Como administrador, pulsa **Enviar correo de prueba**.
-3. En un lead con email, elige el canal **Email** en el mensaje sugerido: aparece **Enviar por email**.
+- Las claves (SerpAPI, contraseña SMTP, API de Resend) se guardan **cifradas** en la base de datos con una clave derivada de `SECRET_KEY`.
+- **Nunca se vuelven a mostrar**: ni en pantalla ni en la API. La interfaz solo dice si están configuradas y de dónde vienen. Para cambiar una, escribes la nueva; para quitarla, «Quitar la guardada».
+- Solo los **administradores** ven o cambian los ajustes. Cada cambio queda con su autor y fecha (nunca con el valor).
+- **Necesitas una `SECRET_KEY` estable** (mínimo 16 caracteres). En Render ya se genera sola con `render.yaml` y no cambia entre despliegues. En local, defínela en `.env`. **Si la cambias, las claves guardadas quedan ilegibles** y habrá que volver a introducirlas (la app te lo avisa).
+- Los mensajes de error nunca incluyen claves ni contraseñas.
 
-## Salvaguardas del envío a clientes
+## Prioridad: la app manda, Render es el respaldo
 
-- Solo se envía al **email que el propio negocio publicó** (el de su web o su bio), nunca a una dirección escrita a mano: la app no puede usarse como relé.
-- Siempre hay **vista previa editable y confirmación** explícita. No hay envío masivo ni automático.
-- **Tope diario** y **una vez cada 24 h por lead**.
-- Cada correo lleva tu firma y una línea para **darse de baja** («responde “no” y no volveré a escribirte»). La app **no lee las respuestas**: si alguien dice que no, márcalo tú como *Descartado* y la app dejará de ofrecer el envío a ese lead.
-- Cada intento (enviado o con error) queda registrado, y el lead pasa a *Contactado* con su seguimiento a +3 días.
-- Los mensajes de error nunca incluyen contraseñas ni claves.
+Si un ajuste está guardado en la app, se usa ese. Si no, se usa la variable de entorno de Render (si existe), y si no, el valor por defecto. Por eso nada se rompe mientras migras:
+
+1. Entra en **Ajustes → Motor de búsqueda**. Si tu clave de SerpAPI sigue en Render verás «Desde Render (entorno)».
+2. Pulsa **«Guardar en la app la que ya está en Render»**: la copia cifrada, sin pasar por tu navegador.
+3. Pulsa **«Probar clave»**: consulta tu cuenta de SerpAPI (no gasta créditos).
+4. Ya puedes borrar `SERPAPI_KEY` de Render. Si lo haces, no se pierde nada.
+
+## Conectar tu correo
+
+### Opción A — Tu Gmail por SMTP
+1. Activa la **verificación en dos pasos** en tu cuenta de Google.
+2. Crea una **contraseña de aplicación**: <https://myaccount.google.com/apppasswords> (16 letras, distinta de tu contraseña normal, revocable).
+3. En **Ajustes → Correo**: servidor `smtp.gmail.com`, puerto `587`, tu correo como usuario y la contraseña de aplicación. Pon también el email que recibirá los avisos.
+4. **Guardar cambios** y luego **Enviar correo de prueba**.
+
+> **Ojo con Render:** según el anuncio de Render de 2025, los servicios del plan gratis no pueden salir por los puertos SMTP (25, 465 y 587). Verifícalo en su documentación. En ese caso usa la opción B o un plan de pago.
+
+### Opción B — API de Resend (funciona en Render gratis)
+1. Crea una cuenta en <https://resend.com> y genera una **API key**.
+2. En **Ajustes → Correo**, pégala en «API key de Resend» y pon el email de tu cuenta de Resend como destino de los avisos.
+3. Para los **avisos** basta con eso (con el remitente de pruebas Resend solo permite enviar a tu propio email).
+4. Para **escribir a clientes** hace falta **verificar un dominio tuyo** en Resend y poner en «Remitente que ve el cliente» algo como `Tu Nombre <hola@tudominio.com>`.
+
+Si defines las dos, **Resend tiene prioridad**.
+
+## Avisos de cuota
+
+Un correo cuando el consumo mensual de SerpAPI llega al porcentaje que fijes (80 % por defecto; puedes poner varios, p. ej. `80, 100`). Una vez por mes y umbral. En **Analítica**, debajo del medidor, ves si está activo y, como administrador, puedes enviar un correo de prueba.
+
+## Propuestas a clientes
+
+Botón **Enviar por email** en cada lead con email publicado. Siempre manual:
+
+- Un lead a la vez, con **vista previa editable y confirmación**.
+- Solo al **email que el propio negocio publicó** (nunca a una dirección escrita a mano).
+- **Tope diario** (5 por defecto, ajustable) y **una vez cada 24 h por lead**.
+- Firma y **línea para darse de baja** en cada correo. La app **no lee las respuestas**: si alguien dice que no, márcalo tú como *Descartado*.
+- No sale si el mensaje aún tiene datos por completar (`[TU NOMBRE]`…): complétalos en **Remitente y firma**.
+- Cada intento (enviado o con error) queda en el **historial de correos del lead**, con el mensaje exacto que se envió. El lead pasa a *Contactado* con seguimiento a +3 días.
+
+## Variables de entorno (opcionales)
+
+Siguen funcionando como respaldo: `SERPAPI_KEY`, `SERPAPI_CUOTA_MES`, `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CLAVE`, `RESEND_API_KEY`, `EMAIL_REMITENTE`, `EMAIL_RESPONDER_A`, `ALERTA_EMAIL_DESTINO`, `ALERTA_UMBRALES`, `ENVIO_MAX_DIA`, `REMITENTE_NOMBRE`, `REMITENTE_CARGO`, `AGENCIA_NOMBRE`, `REMITENTE_CONTACTO`, `CASO_EXITO`. Imprescindibles en Render: `SECRET_KEY`, `DATABASE_URL`, `ADMIN_USER` y `ADMIN_PASSWORD`.

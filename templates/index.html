@@ -32,6 +32,7 @@
         <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
         <symbol id="i-radar" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></symbol>
         <symbol id="i-phone-call" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
         <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></symbol>
     </svg>
 
@@ -53,8 +54,8 @@
             <span class="corto">Datos</span><span class="largo">Analítica</span>
         </button>
         <button type="button" class="nav-item" data-vista="usuarios" id="navUsuarios" hidden>
-            <svg class="icono" aria-hidden="true"><use href="#i-users"/></svg>
-            <span class="corto">Equipo</span><span class="largo">Usuarios</span>
+            <svg class="icono" aria-hidden="true"><use href="#i-settings"/></svg>
+            <span class="corto">Ajustes</span><span class="largo">Ajustes</span>
         </button>
         <div class="nav-yo"><strong id="yoNombre">…</strong><span id="yoRol"></span></div>
         <form method="post" action="/logout">
@@ -216,9 +217,17 @@
         <!-- ============ USUARIOS ============ -->
         <section class="vista" id="vista-usuarios" aria-labelledby="h-usuarios">
             <header class="pagina-cab">
-                <h1 id="h-usuarios">Usuarios</h1>
-                <p>Crea cuentas para tu equipo y asígnales leads</p>
+                <h1 id="h-usuarios">Ajustes</h1>
+                <p>Equipo, claves y correo. Todo se gestiona aquí: no hace falta tocar Render.</p>
             </header>
+            <div class="aj-tabs" role="tablist" aria-label="Secciones de ajustes">
+                <button type="button" class="aj-tab" role="tab" data-aj="usuarios" aria-selected="true">Usuarios</button>
+                <button type="button" class="aj-tab" role="tab" data-aj="serpapi" aria-selected="false">Motor de búsqueda</button>
+                <button type="button" class="aj-tab" role="tab" data-aj="correo" aria-selected="false">Correo</button>
+                <button type="button" class="aj-tab" role="tab" data-aj="remitente" aria-selected="false">Remitente y firma</button>
+            </div>
+            <div class="aviso error" id="errorAjustes" role="alert"></div>
+            <div class="aj-panel" id="aj-usuarios">
 
             <div class="card">
                 <h2 class="card-titulo">
@@ -258,6 +267,10 @@
             </div>
 
             <div id="usuariosTabla"></div>
+        </div>
+            <div class="aj-panel" id="aj-serpapi" hidden></div>
+            <div class="aj-panel" id="aj-correo" hidden></div>
+            <div class="aj-panel" id="aj-remitente" hidden></div>
         </section>
 
         <footer>Desarrollado por Jhony Escobar</footer>
@@ -357,6 +370,11 @@
                     <textarea id="lNotas" maxlength="5000"></textarea>
                 </div>
 
+                <div id="dlgCorreosBox" hidden>
+                    <h3 style="font-size:.9rem">Correos enviados</h3>
+                    <ul class="historial" id="dlgCorreos"></ul>
+                </div>
+
                 <div id="dlgHistorialBox">
                     <h3 style="font-size:.9rem">Historial</h3>
                     <ul class="historial" id="dlgHistorial"></ul>
@@ -434,6 +452,7 @@
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script src="{{ url_for('static', filename='analitica.js') }}"></script>
+    <script src="{{ url_for('static', filename='ajustes.js') }}"></script>
     <script>
     // ------------------------------------------------------------ utilidades
     const ESTADOS = {
@@ -505,7 +524,7 @@
         if (vista === 'buscar') setTimeout(() => { iniciarMapa(); if (mapa) mapa.resize(); }, 60);
         if (vista === 'leads') cargarLeads();
         if (vista === 'analitica') cargarAnalitica();
-        if (vista === 'usuarios') cargarUsuarios();
+        if (vista === 'usuarios') { cargarUsuarios(); if (window.Ajustes) window.Ajustes.cargar(); }
     }
     document.querySelectorAll('.nav-item[data-vista]').forEach(b => b.addEventListener('click', () => irA(b.dataset.vista)));
 
@@ -518,6 +537,10 @@
         try { CORREO = await api('/api/alertas/estado'); } catch (e) { /* el envío por email simplemente no se ofrece */ }
         try { await cargarSectores(); } catch (e) { aviso($('error'), 'error', e.message); }
         irA(location.hash.slice(1) || 'buscar');
+    }
+
+    async function refrescarCorreo() {
+        try { CORREO = await api('/api/alertas/estado'); } catch (e) { /* sin cambios */ }
     }
 
     async function refrescarUsuarios() {
@@ -1125,6 +1148,14 @@
         $('dlgHistorial').innerHTML = l.historial.map(h =>
             `<li>${badgeEstado(h.estado)} <strong>${escapeHtml(h.usuario)}</strong> · ${fmtFechaHora(h.fecha)}` +
             `${h.canal ? ' · ' + CANALES[h.canal] : ''}${h.nota ? `<br><span class="muted">${escapeHtml(h.nota)}</span>` : ''}</li>`).join('');
+        $('dlgCorreosBox').hidden = !(l.correos && l.correos.length);
+        $('dlgCorreos').innerHTML = (l.correos || []).map(c => `<li>
+            <span class="badge ${c.estado === 'enviado' ? 'badge-exito' : 'badge-error'}">${c.estado === 'enviado' ? 'Enviado' : 'Error'}</span>
+            <strong>${escapeHtml(c.asunto)}</strong><br>
+            <span class="muted">a ${escapeHtml(c.destino)} · ${escapeHtml(c.usuario)} · ${fmtFechaHora(c.fecha)}</span>
+            ${c.error ? `<br><span style="color:var(--error-t)">${escapeHtml(c.error)}</span>` : ''}
+            ${c.cuerpo ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">Ver el mensaje enviado</summary><div class="email-body" style="margin-top:6px">${escapeHtml(c.cuerpo)}</div></details>` : ''}
+        </li>`).join('');
         if (!dlg.open) dlg.showModal();
     }
 

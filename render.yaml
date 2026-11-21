@@ -1,3 +1,5 @@
+# Casi todas las variables de abajo son OPCIONALES: se pueden gestionar desde la app en Ajustes (claves cifradas).
+# Imprescindibles: SECRET_KEY (estable; cifra las claves guardadas), DATABASE_URL, ADMIN_USER y ADMIN_PASSWORD.
 services:
   - type: web
     name: cazador-leads-web

@@ -17,6 +17,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+import ajustes
 import mensajes
 from escaner import clasificar_url, evaluar, ocultar_clave
 
@@ -234,7 +235,7 @@ class CazadorLeads:
 
         print(f"\n🔍 Buscando: '{query}' en {self.ciudad}, {self.pais}")
 
-        serpapi_key = os.getenv("SERPAPI_KEY")
+        serpapi_key = ajustes.obtener("SERPAPI_KEY")
         if not serpapi_key or serpapi_key == "tu_api_key_aqui":
             self.error_busqueda = "SERPAPI_KEY no configurada en .env"
             print(f"   ❌ {self.error_busqueda}")

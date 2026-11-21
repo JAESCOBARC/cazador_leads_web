@@ -26,6 +26,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import escaner
 import mensajes
+import ajustes
 import alertas
 import correo
 import radar
@@ -273,7 +274,11 @@ def detalle_lead(lead_id):
             return jsonify({'error': 'Lead no encontrado'}), 404
         hist = conn.execute(select(db.contactos).where(db.contactos.c.lead_id == lead_id)
                             .order_by(db.contactos.c.fecha.desc(), db.contactos.c.id.desc())).mappings().all()
+        correos = conn.execute(select(db.envios).where(db.envios.c.lead_id == lead_id)
+                               .order_by(db.envios.c.fecha.desc(), db.envios.c.id.desc())).mappings().all()
     d = _lead_dict(r, nombres)
+    d['correos'] = [{'estado': e['estado'], 'asunto': e['asunto'] or '', 'destino': e['destino'], 'cuerpo': e['cuerpo'] or '',
+                     'error': e['error'] or '', 'usuario': nombres.get(e['usuario_id'], '—'), 'fecha': _iso(e['fecha'])} for e in correos]
     d['historial'] = [{'estado': h['estado'], 'canal': h['canal'], 'nota': h['nota'] or '',
                        'usuario': nombres.get(h['usuario_id'], '—'), 'fecha': _iso(h['fecha'])} for h in hist]
     return jsonify(d)
@@ -407,7 +412,12 @@ def registrar_toque(lead_id):
 # Siempre manual (CLAUDE.md): un lead a la vez, con vista previa y confirmación, solo al email que el propio
 # negocio publicó, con límite diario, línea de baja y registro en el historial.
 
-ENVIO_MAX_DIA = max(1, int(os.environ.get('ENVIO_MAX_DIA', '5') or 5))
+ENVIO_MAX_DIA = max(1, int(os.environ.get('ENVIO_MAX_DIA', '5') or 5))  # valor inicial; lo guardado en Ajustes tiene prioridad
+
+
+def _envio_max():
+    v = ajustes.obtener_entero('ENVIO_MAX_DIA')
+    return max(1, v) if v else ENVIO_MAX_DIA
 
 
 def _inicio_del_dia():
@@ -423,7 +433,7 @@ def _enviados_hoy(conn=None):
 
 
 def _pie_envio():
-    firma = ' · '.join(x for x in (os.environ.get('REMITENTE_NOMBRE', '').strip(), os.environ.get('AGENCIA_NOMBRE', '').strip()) if x)
+    firma = ' · '.join(x for x in (ajustes.obtener('REMITENTE_NOMBRE').strip(), ajustes.obtener('AGENCIA_NOMBRE').strip()) if x)
     return ('\n\n--\n' + (firma + '\n' if firma else '') +
             'Te escribo porque encontré tu negocio en Google Maps. Si no quieres recibir más mensajes, '
             'responde «no» y no volveré a escribirte.')
@@ -442,9 +452,9 @@ def enviar_email_lead(lead_id):
         return jsonify({'error': 'El mensaje debe tener entre 20 y 5000 caracteres'}), 400
     if re.search(r'\[TU [^\]]*\]', asunto + cuerpo):
         return jsonify({'error': 'El mensaje aún tiene datos por completar ([TU NOMBRE], [TU CARGO], [TU AGENCIA]…). '
-                                 'Define REMITENTE_NOMBRE, REMITENTE_CARGO, AGENCIA_NOMBRE y REMITENTE_CONTACTO en la configuración.'}), 400
+                                 'Complétalos en Ajustes → Remitente y firma.'}), 400
     if not correo.proveedor():
-        return jsonify({'error': 'El envío de correo no está configurado (RESEND_API_KEY o SMTP_HOST)'}), 400
+        return jsonify({'error': 'El envío de correo no está configurado: ve a Ajustes → Correo'}), 400
     L, E = db.leads, db.envios
     with db.engine.connect() as conn:
         r = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
@@ -455,25 +465,25 @@ def enviar_email_lead(lead_id):
         destino = (r['email'] or '').strip()
         if not correo._EMAIL.match(destino):
             return jsonify({'error': 'Este lead no tiene un email publicado. Búscalo en su web o en sus redes'}), 400
-        if _enviados_hoy(conn) >= ENVIO_MAX_DIA:
-            return jsonify({'error': f'Límite diario alcanzado ({ENVIO_MAX_DIA} correos). Se recomienda no enviar en masa'}), 429
+        if _enviados_hoy(conn) >= _envio_max():
+            return jsonify({'error': f'Límite diario alcanzado ({_envio_max()} correos). Se recomienda no enviar en masa'}), 429
         reciente = conn.execute(select(func.count()).select_from(E).where(
             E.c.lead_id == lead_id, E.c.estado == 'enviado', E.c.fecha >= db.ahora() - timedelta(hours=24))).scalar()
         if reciente:
             return jsonify({'error': 'Ya enviaste un correo a este lead en las últimas 24 horas'}), 409
     try:
-        correo.enviar(asunto, cuerpo + _pie_envio(), destinos=[destino], reply_to=os.environ.get('EMAIL_RESPONDER_A') or None)
+        correo.enviar(asunto, cuerpo + _pie_envio(), destinos=[destino], reply_to=ajustes.obtener('EMAIL_RESPONDER_A').strip() or None)
     except correo.CorreoError as e:
         with db.engine.begin() as conn:
             conn.execute(insert(E).values(lead_id=lead_id, usuario_id=request.user['id'], destino=destino, asunto=asunto[:255],
-                                          estado='error', error=str(e)[:250], fecha=db.ahora()))
+                                          estado='error', error=str(e)[:250], cuerpo=cuerpo, fecha=db.ahora()))
         return jsonify({'error': str(e)}), 502
     with db.engine.begin() as conn:
         conn.execute(insert(E).values(lead_id=lead_id, usuario_id=request.user['id'], destino=destino, asunto=asunto[:255],
-                                      estado='enviado', fecha=db.ahora()))
+                                      estado='enviado', cuerpo=cuerpo, fecha=db.ahora()))
     _aplicar_toque(lead_id, request.user['id'], 'email', d.get('plantilla'), f'Correo enviado: {asunto}')
     out = detalle_lead(lead_id).get_json()
-    out['envios_restantes_hoy'] = max(0, ENVIO_MAX_DIA - _enviados_hoy())
+    out['envios_restantes_hoy'] = max(0, _envio_max() - _enviados_hoy())
     return jsonify(out)
 
 
@@ -482,7 +492,7 @@ def enviar_email_lead(lead_id):
 @app.route('/api/alertas/estado')
 def alertas_estado():
     e = alertas.estado()
-    e.update(puede_enviar=bool(correo.proveedor()), limite_dia=ENVIO_MAX_DIA, enviados_hoy=_enviados_hoy())
+    e.update(puede_enviar=bool(correo.proveedor()), limite_dia=_envio_max(), enviados_hoy=_enviados_hoy())
     return jsonify(e)
 
 
@@ -536,9 +546,9 @@ def lanzar_lote_redes():
         return jsonify({'error': 'Indica un tope de créditos (número entero)'}), 400
     if tope < 1:
         return jsonify({'error': 'El tope debe ser al menos 1 crédito'}), 400
-    key = os.environ.get('SERPAPI_KEY', '')
+    key = ajustes.obtener('SERPAPI_KEY')
     if not key or key == 'tu_api_key_aqui':
-        return jsonify({'error': 'SERPAPI_KEY no configurada en .env'}), 400
+        return jsonify({'error': 'La clave de SerpAPI no está configurada (Ajustes → Motor de búsqueda)'}), 400
     previo = radar.en_curso_lote(request.user['id'])
     if previo:
         return jsonify({'job_id': previo['id'], 'ya_en_curso': True}), 200
@@ -671,7 +681,6 @@ def analitica():
 
 # ---------------------------------------------------------------- Panel analítico
 
-CUOTA_MES = max(1, int(os.environ.get('SERPAPI_CUOTA_MES', '100') or 100))
 _cuenta = {'t': 0.0, 'd': None}
 
 
@@ -714,7 +723,7 @@ def analitica_datos():
                      'ahorrados': c['ahorrados'], 'usuario': c['usuario_id'] or 0,
                      'ciudad': c['ciudad'] or '—', 'sector': c['sector'] or '—'} for c in consumo_],
         'usuarios': {str(k): v for k, v in usuarios_.items()},
-        'config': {'cuota_mes': CUOTA_MES, 'hoy': date.today().isoformat()},
+        'config': {'cuota_mes': alertas.cuota_configurada(), 'hoy': date.today().isoformat()},
         'yo': {'id': request.user['id'], 'rol': request.user['rol']},
     })
 
@@ -857,9 +866,9 @@ def serpapi_cuenta():
     """Estado real de la cuenta de SerpAPI. Su API de cuenta no consume créditos; se cachea 5 minutos."""
     if time.time() - _cuenta['t'] < 300 and _cuenta['d'] is not None:
         return jsonify(_cuenta['d'])
-    key = os.environ.get('SERPAPI_KEY', '')
+    key = ajustes.obtener('SERPAPI_KEY')
     if not key or key == 'tu_api_key_aqui':
-        return jsonify({'disponible': False, 'motivo': 'SERPAPI_KEY no configurada'})
+        return jsonify({'disponible': False, 'motivo': 'La clave de SerpAPI no está configurada'})
     try:
         r = requests.get('https://serpapi.com/account', params={'api_key': key}, timeout=10)
         r.raise_for_status()
@@ -894,6 +903,58 @@ def exportar_consumo():
                                         nombres.get(r['usuario_id'], ''), r['ciudad'], r['sector'], r['detalle'])])
     return Response('\ufeff' + buf.getvalue(), mimetype='text/csv; charset=utf-8',
                     headers={'Content-Disposition': 'attachment; filename=consumo_serpapi.csv'})
+
+
+# ---------------------------------------------------------------- Ajustes (solo administradores)
+
+@app.route('/api/ajustes')
+@solo_admin
+def ver_ajustes():
+    return jsonify(ajustes.estado())
+
+
+@app.route('/api/ajustes', methods=['PUT'])
+@solo_admin
+def guardar_ajustes():
+    d = request.get_json(silent=True) or {}
+    valores, borrar, importar = d.get('valores') or {}, d.get('borrar') or [], d.get('importar') or []
+    if (not isinstance(valores, dict) or not isinstance(borrar, list) or not isinstance(importar, list)
+            or not all(isinstance(k, str) for k in [*valores, *borrar, *importar])
+            or not all(v is None or isinstance(v, (str, int)) for v in valores.values())):
+        return jsonify({'error': 'Formato de ajustes no válido'}), 400
+    try:
+        tocados = ajustes.guardar(valores, borrar, importar, request.user['id'])
+    except ajustes.AjusteError as e:
+        return jsonify({'error': str(e)}), 400
+    if not tocados:
+        return jsonify({'error': 'No hay cambios que guardar'}), 400
+    if 'SERPAPI_KEY' in tocados:  # otra clave => otra cuenta: se olvida la consulta anterior
+        _cuenta.update(t=0.0, d=None)
+        alertas.recordar_cuenta(None)
+    print(f"[AJUSTES] {request.user['usuario']} modificó: {', '.join(tocados)}")  # nunca se imprimen los valores
+    return jsonify(dict(ajustes.estado(), guardados=tocados))
+
+
+@app.route('/api/ajustes/probar/serpapi', methods=['POST'])
+@solo_admin
+def probar_serpapi():
+    """Comprueba la clave consultando la cuenta de SerpAPI (no gasta créditos)."""
+    key = ajustes.obtener('SERPAPI_KEY')
+    if not key or key == 'tu_api_key_aqui':
+        return jsonify({'error': 'Todavía no hay una clave de SerpAPI configurada'}), 400
+    try:
+        r = requests.get('https://serpapi.com/account', params={'api_key': key}, timeout=10)
+        if r.status_code in (401, 403):
+            return jsonify({'error': 'SerpAPI rechazó la clave: revisa que esté bien copiada'}), 400
+        r.raise_for_status()
+        d = r.json()
+    except (requests.RequestException, ValueError):
+        return jsonify({'error': 'No se pudo consultar SerpAPI ahora mismo'}), 502
+    out = {'disponible': True, 'plan': d.get('plan_name'), 'cuota': d.get('searches_per_month'),
+           'usadas': d.get('this_month_usage'), 'restantes': d.get('total_searches_left')}
+    _cuenta.update(t=time.time(), d=out)
+    alertas.recordar_cuenta(out)
+    return jsonify(dict(out, ok=True))
 
 
 # ---------------------------------------------------------------- Usuarios

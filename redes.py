@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 
 import requests
 
+import ajustes
 import escaner
 
 RE_RED = re.compile(r"^https?://([a-z0-9-]+\.)*(instagram|facebook)\.com/", re.I)
@@ -112,7 +113,7 @@ def coincide(nombre, texto):
 
 def buscar_perfiles(nombre, ciudad, cache=None):
     """Busca Instagram/Facebook del negocio en Google. Devuelve perfiles y contactos publicados."""
-    key = os.getenv("SERPAPI_KEY")
+    key = ajustes.obtener("SERPAPI_KEY")
     if not key or key == "tu_api_key_aqui":
         raise RedesError("SERPAPI_KEY no configurada en .env")
     q = f'"{nombre}" {ciudad} (site:instagram.com OR site:facebook.com)'

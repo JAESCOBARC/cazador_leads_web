@@ -167,7 +167,19 @@ envios = Table(
     Column('asunto', String(255)),
     Column('estado', String(20), nullable=False),    # enviado | error
     Column('error', String(255)),
+    Column('cuerpo', Text),                           # texto enviado (sin la línea de baja)
     Column('fecha', DateTime, nullable=False, default=ahora),
+)
+
+
+# Ajustes gestionados desde la app (las claves se guardan cifradas; ver ajustes.py).
+ajustes = Table(
+    'ajustes', metadata,
+    Column('clave', String(60), primary_key=True),
+    Column('valor', Text, nullable=False),
+    Column('secreto', Boolean, nullable=False, default=False),
+    Column('actualizado_en', DateTime, nullable=False, default=ahora),
+    Column('actualizado_por', Integer, ForeignKey('usuarios.id')),
 )
 
 
@@ -200,10 +212,12 @@ def _migrar():
     ADD COLUMN, nullable) para no perder los leads ya guardados."""
     insp = inspect(engine)
     with engine.begin() as conn:
-        for tabla in (leads, contactos):
+        for tabla in metadata.sorted_tables:
+            if not insp.has_table(tabla.name):
+                continue
             existentes = {c['name'] for c in insp.get_columns(tabla.name)}
             for col in tabla.columns:
-                if col.name not in existentes:
+                if col.name not in existentes and col.nullable:
                     tipo = col.type.compile(engine.dialect)
                     conn.execute(text(f'ALTER TABLE {tabla.name} ADD COLUMN {col.name} {tipo}'))
 

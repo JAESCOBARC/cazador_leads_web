@@ -17,6 +17,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_dir}/test.db"
 os.environ["ADMIN_USER"] = "admin"
 os.environ["ADMIN_PASSWORD"] = "clave-de-prueba-123"
 os.environ["SERPAPI_KEY"] = "clave-falsa"
+os.environ["SECRET_KEY"] = "clave-de-pruebas-estable-0123456789abcdef"  # para cifrar los ajustes
 
 import escaner  # noqa: E402
 import mensajes  # noqa: E402
@@ -1199,7 +1200,7 @@ def test_enviar_propuesta_al_lead_con_todas_las_salvaguardas(sin_correo, cliente
     assert cliente.post(url, headers=H, json=dict(BODY_OK, asunto="  ")).status_code == 400
     assert cliente.post(url, headers=H, json=dict(BODY_OK, cuerpo="corto")).status_code == 400
     r = cliente.post(url, headers=H, json=dict(BODY_OK, cuerpo=BODY_OK["cuerpo"] + " Soy [TU NOMBRE] de [TU AGENCIA]."))
-    assert r.status_code == 400 and "REMITENTE_NOMBRE" in r.get_json()["error"]                          # no sale con placeholders
+    assert r.status_code == 400 and "Ajustes" in r.get_json()["error"]                          # no sale con placeholders
     assert enviados == []
     ok = cliente.post(url, headers=H, json=BODY_OK)
     assert ok.status_code == 200
@@ -1256,3 +1257,233 @@ def test_error_del_proveedor_se_registra_y_no_marca_contacto(sin_correo, cliente
     assert fila["estado"] == "error" and "403" in fila["error"]
     mp.setattr(correo, "enviar", lambda *a, **k: None)
     assert cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=BODY_OK).status_code == 200   # un error no bloquea el reintento
+
+
+# ------------------------------------------------------------------ Ajustes gestionados desde la app + historial de correos
+
+import ajustes  # noqa: E402
+
+CLAVE_SERP = "serp_clave_super_secreta_0001"
+CLAVE_SMTP = "abcd efgh ijkl mnop"
+
+
+@pytest.fixture
+def ajustes_limpios(sin_correo):
+    import db
+    def vaciar():
+        with db.engine.begin() as conn:
+            conn.execute(db.ajustes.delete())
+        ajustes.invalidar()
+    vaciar()
+    yield sin_correo
+    vaciar()
+
+
+def _put(c, **cuerpo):
+    return c.put("/api/ajustes", headers=H, json=cuerpo)
+
+
+def test_solo_admin_ve_y_cambia_los_ajustes(ajustes_limpios, cliente, cliente_laura):
+    assert cliente_laura.get("/api/ajustes").status_code == 403
+    assert _put(cliente_laura, valores={"REMITENTE_NOMBRE": "x"}).status_code == 403
+    assert cliente_laura.post("/api/ajustes/probar/serpapi", headers=H).status_code == 403
+    assert cliente.put("/api/ajustes", json={"valores": {"REMITENTE_NOMBRE": "x"}}).status_code == 403   # CSRF
+    d = cliente.get("/api/ajustes").get_json()
+    assert d["cifrado_disponible"] is True and [g["id"] for g in d["grupos"]] == ["serpapi", "correo", "remitente"]
+
+
+def test_las_claves_se_guardan_cifradas_y_nunca_salen_al_navegador(ajustes_limpios, cliente):
+    import db
+    from sqlalchemy import select as _sel
+    r = _put(cliente, valores={"SERPAPI_KEY": CLAVE_SERP, "SMTP_CLAVE": CLAVE_SMTP, "REMITENTE_NOMBRE": "Jhony"})
+    assert r.status_code == 200 and set(r.get_json()["guardados"]) == {"SERPAPI_KEY", "SMTP_CLAVE", "REMITENTE_NOMBRE"}
+    # nada de lo que devuelve la API contiene un secreto
+    for texto in (r.get_data(as_text=True), cliente.get("/api/ajustes").get_data(as_text=True)):
+        assert CLAVE_SERP not in texto and "abcd efgh" not in texto and "abcdefgh" not in texto
+    campos = {c["clave"]: c for g in cliente.get("/api/ajustes").get_json()["grupos"] for c in g["campos"]}
+    assert campos["SERPAPI_KEY"]["origen"] == "app" and "valor" not in campos["SERPAPI_KEY"] and campos["SERPAPI_KEY"]["actualizado_por"]
+    assert campos["REMITENTE_NOMBRE"]["valor"] == "Jhony"
+    # en la base de datos están cifradas (no en claro), y las no secretas sí legibles
+    with db.engine.connect() as conn:
+        filas = {f["clave"]: f for f in conn.execute(_sel(db.ajustes)).mappings()}
+    assert CLAVE_SERP not in filas["SERPAPI_KEY"]["valor"] and filas["SERPAPI_KEY"]["secreto"] is True
+    assert filas["SERPAPI_KEY"]["valor"].startswith("gAAAA")           # token Fernet
+    assert filas["REMITENTE_NOMBRE"]["valor"] == "Jhony" and filas["REMITENTE_NOMBRE"]["secreto"] is False
+    # y la app las descifra al usarlas
+    assert ajustes.obtener("SERPAPI_KEY") == CLAVE_SERP and ajustes.obtener("SMTP_CLAVE") == CLAVE_SMTP
+
+
+def test_lo_guardado_en_la_app_gana_al_entorno_y_se_puede_volver_atras(ajustes_limpios, cliente):
+    mp = ajustes_limpios
+    mp.setenv("REMITENTE_NOMBRE", "Desde Render"); mp.setenv("SERPAPI_KEY", "clave-de-render-123456")
+    assert ajustes.obtener("REMITENTE_NOMBRE") == "Desde Render" and ajustes.origen("SERPAPI_KEY") == "entorno"
+    _put(cliente, valores={"REMITENTE_NOMBRE": "Desde la app", "SERPAPI_KEY": CLAVE_SERP})
+    assert ajustes.obtener("REMITENTE_NOMBRE") == "Desde la app" and ajustes.obtener("SERPAPI_KEY") == CLAVE_SERP
+    # un campo normal vacío = olvidar lo guardado y volver al entorno; una clave vacía = no tocarla
+    assert _put(cliente, valores={"REMITENTE_NOMBRE": "", "SERPAPI_KEY": ""}).status_code == 200
+    assert ajustes.obtener("REMITENTE_NOMBRE") == "Desde Render" and ajustes.obtener("SERPAPI_KEY") == CLAVE_SERP
+    assert _put(cliente, borrar=["SERPAPI_KEY"]).status_code == 200
+    assert ajustes.obtener("SERPAPI_KEY") == "clave-de-render-123456"       # vuelve a la de Render
+    assert _put(cliente, valores={"SERPAPI_KEY": ""}).status_code == 400    # sin cambios
+
+
+def test_importar_la_clave_de_render_sin_que_pase_por_el_navegador(ajustes_limpios, cliente):
+    import db
+    from sqlalchemy import select as _sel
+    mp = ajustes_limpios
+    mp.delenv("SERPAPI_KEY", raising=False)
+    assert _put(cliente, importar=["SERPAPI_KEY"]).status_code == 400            # no hay nada en el entorno
+    mp.setenv("SERPAPI_KEY", "clave-de-render-ABCDEF")
+    r = _put(cliente, importar=["SERPAPI_KEY"])
+    assert r.status_code == 200 and "clave-de-render-ABCDEF" not in r.get_data(as_text=True)
+    mp.delenv("SERPAPI_KEY")                                                     # aunque desaparezca de Render, sigue en la app
+    assert ajustes.obtener("SERPAPI_KEY") == "clave-de-render-ABCDEF"
+    with db.engine.connect() as conn:
+        assert "clave-de-render" not in conn.execute(_sel(db.ajustes.c.valor).where(db.ajustes.c.clave == "SERPAPI_KEY")).scalar()
+    assert _put(cliente, importar=["REMITENTE_NOMBRE"]).status_code == 400       # solo claves
+
+
+def test_validaciones_de_ajustes(ajustes_limpios, cliente):
+    malos = [{"NO_EXISTE": "x"}, {"SERPAPI_CUOTA_MES": "abc"}, {"SERPAPI_CUOTA_MES": "0"}, {"SMTP_PUERTO": "70000"},
+             {"ALERTA_EMAIL_DESTINO": "no-es-email"}, {"ALERTA_EMAIL_DESTINO": "a@b.co, malo"}, {"ALERTA_UMBRALES": "ochenta"},
+             {"ALERTA_UMBRALES": "0, 500"}, {"EMAIL_REMITENTE": "Nombre sin correo"}, {"EMAIL_RESPONDER_A": "x"},
+             {"REMITENTE_NOMBRE": "Jhony\r\nBcc: espia@example.com"}, {"CASO_EXITO": "x" * 301}, {"SMTP_CLAVE": "corta"},
+             {"SMTP_HOST": "bad host!"}, {"SMTP_HOST": "localhost"}, {"SMTP_HOST": "127.0.0.1"}, {"SMTP_HOST": "169.254.169.254"}]
+    for m in malos:
+        r = _put(cliente, valores=m)
+        assert r.status_code == 400, m
+    assert _put(cliente, valores="no-es-un-objeto").status_code == 400
+    assert _put(cliente, valores={"SERPAPI_CUOTA_MES": []}).status_code == 400
+    ok = _put(cliente, valores={"ALERTA_EMAIL_DESTINO": "uno@example.com; dos@example.org", "ALERTA_UMBRALES": "100, 80,80", "SERPAPI_CUOTA_MES": "250",
+                                "EMAIL_REMITENTE": "Mi Agencia <hola@miagencia.co>", "EMAIL_RESPONDER_A": "ventas@miagencia.co"})
+    assert ok.status_code == 200
+    assert correo.destinatarios() == ["uno@example.com", "dos@example.org"] and alertas.umbrales() == [80, 100]
+    assert alertas.cuota_configurada() == 250 and correo.remitente() == "Mi Agencia <hola@miagencia.co>"
+    # atómico: si un valor es inválido no se guarda ninguno
+    assert _put(cliente, valores={"REMITENTE_CARGO": "Dev", "SERPAPI_CUOTA_MES": "mal"}).status_code == 400
+    assert ajustes.obtener("REMITENTE_CARGO") == ""
+
+
+def test_sin_secret_key_estable_no_se_guardan_claves_pero_si_el_resto(ajustes_limpios, cliente):
+    mp = ajustes_limpios
+    mp.setenv("SECRET_KEY", "corta")
+    assert cliente.get("/api/ajustes").get_json()["cifrado_disponible"] is False
+    r = _put(cliente, valores={"SERPAPI_KEY": CLAVE_SERP})
+    assert r.status_code == 400 and "SECRET_KEY" in r.get_json()["error"]
+    assert _put(cliente, valores={"REMITENTE_NOMBRE": "Jhony"}).status_code == 200
+
+
+def test_si_cambia_la_secret_key_la_clave_queda_ilegible_y_se_avisa(ajustes_limpios, cliente):
+    mp = ajustes_limpios
+    mp.delenv("SERPAPI_KEY", raising=False)
+    _put(cliente, valores={"SERPAPI_KEY": CLAVE_SERP})
+    mp.setenv("SECRET_KEY", "otra-secret-key-distinta-0123456789")
+    ajustes.invalidar()
+    assert ajustes.obtener("SERPAPI_KEY") == ""                                  # no se usa un dato que no se puede descifrar
+    c = {x["clave"]: x for g in cliente.get("/api/ajustes").get_json()["grupos"] for x in g["campos"]}["SERPAPI_KEY"]
+    assert c["ilegible"] is True and c["origen"] is None
+
+
+def test_la_app_usa_la_clave_guardada_en_ajustes(ajustes_limpios, cliente, monkeypatch):
+    mp = ajustes_limpios
+    mp.delenv("SERPAPI_KEY", raising=False)
+    _put(cliente, valores={"SERPAPI_KEY": CLAVE_SERP})
+    capturado = {}
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"organic_results": []}
+
+    monkeypatch.setattr(redes.requests, "get", lambda url, **k: (capturado.update(k["params"]), R())[1])
+    redes.buscar_perfiles("Negocio Ajustes", "Cali")
+    assert capturado["api_key"] == CLAVE_SERP
+
+
+def test_probar_la_clave_de_serpapi_sin_filtrarla(ajustes_limpios, cliente):
+    import app as aplicacion
+    mp = ajustes_limpios
+    mp.delenv("SERPAPI_KEY", raising=False)
+    assert cliente.post("/api/ajustes/probar/serpapi", headers=H).status_code == 400
+    _put(cliente, valores={"SERPAPI_KEY": CLAVE_SERP})
+
+    class R:
+        def __init__(self, st, data=None): self.status_code, self._d = st, data or {}
+        def raise_for_status(self):
+            if self.status_code >= 400: raise aplicacion.requests.HTTPError("url con api_key=" + CLAVE_SERP)
+        def json(self): return self._d
+
+    mp.setattr(aplicacion.requests, "get", lambda *a, **k: R(200, {"plan_name": "Developer", "searches_per_month": 5000, "this_month_usage": 12, "total_searches_left": 4988}))
+    r = cliente.post("/api/ajustes/probar/serpapi", headers=H)
+    assert r.get_json() == {"disponible": True, "plan": "Developer", "cuota": 5000, "usadas": 12, "restantes": 4988, "ok": True}
+    mp.setattr(aplicacion.requests, "get", lambda *a, **k: R(401))
+    r = cliente.post("/api/ajustes/probar/serpapi", headers=H)
+    assert r.status_code == 400 and CLAVE_SERP not in r.get_data(as_text=True)
+    mp.setattr(aplicacion.requests, "get", lambda *a, **k: R(500))
+    r = cliente.post("/api/ajustes/probar/serpapi", headers=H)
+    assert r.status_code == 502 and CLAVE_SERP not in r.get_data(as_text=True)
+
+
+def test_el_correo_se_configura_desde_la_app_y_los_errores_no_filtran_la_clave(ajustes_limpios, cliente):
+    mp = ajustes_limpios
+    assert correo.proveedor() is None
+    _put(cliente, valores={"RESEND_API_KEY": "re_guardada_en_la_app_999", "ALERTA_EMAIL_DESTINO": "duena@example.com"})
+    assert correo.proveedor() == "resend" and correo.configurado()
+
+    class R:
+        status_code = 403
+        def json(self): return {"message": "invalid key re_guardada_en_la_app_999"}
+
+    mp.setattr(correo.requests, "post", lambda *a, **k: R())
+    with pytest.raises(correo.CorreoError) as e:
+        correo.enviar("a", "b")
+    assert "re_guardada_en_la_app_999" not in str(e.value)
+    assert "re_guardada_en_la_app_999" not in escaner.ocultar_clave("fallo: re_guardada_en_la_app_999 en la URL")
+
+
+def test_la_firma_y_el_tope_diario_se_gestionan_desde_ajustes(ajustes_limpios, cliente):
+    import app as aplicacion
+    _put(cliente, valores={"REMITENTE_NOMBRE": "Laura Pérez", "AGENCIA_NOMBRE": "Estudio Web", "ENVIO_MAX_DIA": "9"})
+    lead = {"nombre": "Negocio X", "nicho": "abogados", "ciudad": "Cali", "oportunidades": [{"tipo": "sin_web", "verificado": True}], "diagnostico": {}, "clave": "k"}
+    t = mensajes.construir(lead, canal="email")["cuerpo"]
+    assert "Laura Pérez" in t and "Estudio Web" in t
+    assert aplicacion._envio_max() == 9 and "Laura Pérez" in aplicacion._pie_envio()
+
+
+# ---- historial de correos dentro del lead
+def test_historial_de_correos_en_el_lead(ajustes_limpios, cliente):
+    mp = ajustes_limpios
+    mp.setenv("RESEND_API_KEY", "re_clave_de_prueba_123")
+    mp.setenv("REMITENTE_NOMBRE", "Jhony"); mp.setenv("AGENCIA_NOMBRE", "Mi Agencia")
+    llamadas = []
+
+    def envia(asunto, texto, html=None, destinos=None, reply_to=None):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            raise correo.CorreoError("Resend rechazó el envío (403): dominio no verificado")
+
+    mp.setattr(correo, "enviar", envia)
+    lid = _crear_lead(nombre="Lead Historial", email="hist@negocio.co")
+    assert cliente.get(f"/api/leads/{lid}").get_json()["correos"] == []
+    assert cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=BODY_OK).status_code == 502
+    assert cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=BODY_OK).status_code == 200
+    c = cliente.get(f"/api/leads/{lid}").get_json()["correos"]
+    assert [x["estado"] for x in c] == ["enviado", "error"]                      # el más reciente primero
+    ok, mal = c
+    assert ok["asunto"] == "Idea para tu web" and ok["destino"] == "hist@negocio.co" and ok["usuario"] and ok["fecha"]
+    assert ok["cuerpo"] == BODY_OK["cuerpo"] and "responde" not in ok["cuerpo"]       # el texto enviado, sin la línea de baja automática
+    assert mal["error"].startswith("Resend rechazó") and mal["cuerpo"] == BODY_OK["cuerpo"]
+
+
+def test_migracion_agrega_columnas_nuevas_a_tablas_existentes(tmp_path):
+    import subprocess
+    ruta = tmp_path / "v2.db"
+    con = sqlite3.connect(ruta)
+    con.execute("CREATE TABLE envios (id INTEGER PRIMARY KEY, lead_id INTEGER NOT NULL, usuario_id INTEGER, destino VARCHAR(255) NOT NULL, "
+                "asunto VARCHAR(255), estado VARCHAR(20) NOT NULL, error VARCHAR(255), fecha DATETIME NOT NULL)")
+    con.execute("INSERT INTO envios VALUES (1, 1, NULL, 'a@b.co', 'x', 'enviado', NULL, '2026-01-01')")
+    con.commit(); con.close()
+    codigo = ("import os,sqlite3;os.environ['DATABASE_URL']='sqlite:///" + str(ruta).replace("\\", "/") + "';import db;db.init_db();"
+              "c=sqlite3.connect(r'" + str(ruta) + "');print('OK' if 'cuerpo' in [r[1] for r in c.execute('PRAGMA table_info(envios)')] else 'FALTA');"
+              "print(c.execute('select asunto from envios').fetchone()[0])")
+    out = subprocess.run([sys.executable, "-c", codigo], cwd=RAIZ, capture_output=True, text=True)
+    assert "OK" in out.stdout and "x" in out.stdout, out.stdout + out.stderr

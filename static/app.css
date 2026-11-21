@@ -559,3 +559,23 @@ dialog::backdrop { background: rgba(23,43,69,.45); }
     .msg-controles { grid-template-columns: repeat(4, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .radar-sweep { animation-duration: 8s; } }
+
+
+/* ===== Ajustes ===== */
+.aj-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: var(--s6); border-bottom: 1px solid var(--borde); }
+.aj-tab {
+    padding: 10px 14px; border: 0; background: none; font-weight: 600; color: var(--texto-2);
+    border-bottom: 3px solid transparent; margin-bottom: -1px; border-radius: 6px 6px 0 0;
+}
+.aj-tab:hover { color: var(--texto); background: rgba(23,43,69,.04); }
+.aj-tab[aria-selected="true"] { color: var(--azul-h); border-bottom-color: var(--azul); }
+.aj-panel[hidden] { display: none; }
+.aj-card .aj-sub {
+    font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-2);
+    margin: var(--s6) 0 var(--s3); padding-top: var(--s4); border-top: 1px solid var(--borde);
+}
+.aj-campo { margin-bottom: var(--s4); }
+.aj-campo label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.aj-extra { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.aj-acciones { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s6); }
+.aj-card .aviso { margin-bottom: 0; }

@@ -17,6 +17,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.exc import IntegrityError
 
+import ajustes
 import correo
 import db
 
@@ -34,14 +35,14 @@ def recordar_cuenta(datos):
 
 def cuota_configurada():
     try:
-        return max(1, int(os.getenv("SERPAPI_CUOTA_MES", "100") or 100))
+        return max(1, int(ajustes.obtener("SERPAPI_CUOTA_MES", "100") or 100))
     except ValueError:
         return 100
 
 
 def umbrales():
     out = []
-    for v in (os.getenv("ALERTA_UMBRALES", "80") or "80").split(","):
+    for v in (ajustes.obtener("ALERTA_UMBRALES", "80") or "80").split(","):
         try:
             n = int(v.strip())
         except ValueError:

@@ -66,7 +66,12 @@ _AGENDA = ("clinic", "clínic", "odontol", "dentist", "peluquer", "barber", "spa
 
 def ocultar_clave(texto):
     """Los errores de `requests` incluyen la URL completa (con api_key=...). Nunca deben mostrarse tal cual."""
-    return re.sub(r"(api_key=)[^&\s'\")]+", r"\1***", str(texto))
+    limpio = re.sub(r"(api_key=)[^&\s'\")]+", r"\1***", str(texto))
+    try:
+        import ajustes
+        return ajustes.limpiar(limpio)
+    except Exception:  # noqa: BLE001
+        return limpio
 
 
 def _norm(t):
