@@ -47,7 +47,7 @@
     const UI = { consumoModo: 'mes', heat: 'leads', rend: 'usuario', tabla: {} };
     const charts = {}, TABLAS = {};
     let construido = false, S = null;
-    let VISTAS = [], aplicadaDefault = false;
+    let VISTAS = [], aplicadaDefault = false, ALERTA = null;
     const LISTAS = ['ciudad', 'sector', 'usuario', 'prioridad', 'oportunidad'];
 
     const filtroInicial = () => ({ preset: '6m', desde: null, hasta: null, ciudad: new Set(), sector: new Set(),
@@ -185,6 +185,16 @@
         render();
     }
 
+    function avisoCorreo() {
+        if (!ALERTA) return '';
+        if (!ALERTA.configurado) return '✉ Aviso por email <b>sin configurar</b>: define ALERTA_EMAIL_DESTINO y SMTP_* o RESEND_API_KEY (ver .env.example).';
+        const ult = ALERTA.enviadas_mes.length ? ALERTA.enviadas_mes[ALERTA.enviadas_mes.length - 1] : null;
+        const admin = DATA && DATA.yo && DATA.yo.rol === 'admin';
+        return `✉ Aviso por email al <b>${esc(ALERTA.umbrales.join(' y '))}%</b> de la cuota: <b>activo</b> (${esc(ALERTA.destinos.join(', '))}).` +
+            (ult ? ` Ya se envió este mes (${esc(diaTxt(fechaLocal(ult.fecha)))}, con ${fmt(ult.usados)} de ${fmt(ult.cuota)}).` : ' Aún no se ha necesitado este mes.') +
+            (admin ? ' <button type="button" class="viz-btn" id="vizAlertaPrueba">Enviar correo de prueba</button>' : '');
+    }
+
     // ------------------------------------------------------------------ HERO: consumo del mes (cuenta, no se filtra)
     function pintarHero() {
         const hoy = DATA.config.hoy, m = mesDe(hoy);
@@ -218,7 +228,8 @@
                 <div class="dato"><b>${fmt(ahorrados)}</b><span>ahorrados por caché</span></div>
                 <div class="dato"><b>${fmt(dias - dia)}</b><span>días restantes del mes</span></div>
             </div>
-            <div class="hero-nota">${real}${primera ? ` <span class="nota-chica">Esta app registra su consumo desde ${esc(diaTxt(primera))} ${esc(primera.slice(0, 4))}.</span>` : ''}</div>`;
+            <div class="hero-nota">${real}${primera ? ` <span class="nota-chica">Esta app registra su consumo desde ${esc(diaTxt(primera))} ${esc(primera.slice(0, 4))}.</span>` : ''}</div>
+            <div class="hero-nota" style="border-top:0;padding-top:0" id="vizAlerta">${avisoCorreo()}</div>`;
     }
 
     // ------------------------------------------------------------------ KPI
@@ -781,6 +792,12 @@
                 ({ consumo: pintarConsumo, heat: pintarCalor, rend: pintarRend })[g](); return; }
             if (e.target.id === 'vizReset') { F = filtroInicial(); render(); return; }
             if (e.target.id === 'vizGuardarVista') { abrirDialogoVista(); return; }
+            if (e.target.id === 'vizAlertaPrueba') {
+                const b = e.target; b.disabled = true; b.textContent = 'Enviando…';
+                enviar('POST', '/api/alertas/prueba').then(() => { b.textContent = 'Enviado ✓ revisa tu bandeja'; })
+                    .catch((er) => { b.textContent = 'Enviar correo de prueba'; alert(er.message); }).finally(() => { setTimeout(() => { b.disabled = false; }, 4000); });
+                return;
+            }
             if (e.target.id === 'vizVistaDef') {
                 const v = vistaActiva(); if (!v) return;
                 enviar('PATCH', '/api/vistas/' + v.id, { predeterminada: !v.predeterminada }).then(recargarVistas).catch((er) => alert(er.message)); return;
@@ -825,12 +842,12 @@
         if (err) err.classList.remove('active');
         if (!construido && !DATA) cont.innerHTML = '<div class="vacio-viz">Cargando el panel…</div>';
         try {
-            const [datos, cuenta, vistas] = await Promise.all([pedir('/api/analitica/datos'), pedir('/api/serpapi/cuenta').catch(() => null),
-                pedir('/api/vistas').catch(() => ({ vistas: [] }))]);
+            const [datos, cuenta, vistas, alerta] = await Promise.all([pedir('/api/analitica/datos'), pedir('/api/serpapi/cuenta').catch(() => null),
+                pedir('/api/vistas').catch(() => ({ vistas: [] })), pedir('/api/alertas/estado').catch(() => null)]);
             datos.leads.forEach((l) => { l.f = fechaLocal(l.creado); });
             datos.eventos.forEach((e) => { e.f = fechaLocal(e.fecha); });
             datos.consumo.forEach((c) => { c.f = fechaLocal(c.fecha); });
-            DATA = datos; CUENTA = cuenta; VISTAS = vistas.vistas || [];
+            DATA = datos; CUENTA = cuenta; VISTAS = vistas.vistas || []; ALERTA = alerta;
             if (!F) F = filtroInicial();
             if (!construido) construir();
             if (!aplicadaDefault) {  // la primera vez, el panel se abre con la vista predeterminada del usuario

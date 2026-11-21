@@ -942,3 +942,317 @@ def test_limite_de_vistas_por_usuario(cliente_laura):
 def test_el_panel_conoce_al_usuario_para_las_vistas(cliente):
     d = cliente.get("/api/analitica/datos").get_json()
     assert d["yo"]["rol"] == "admin" and d["yo"]["id"]
+
+
+# ------------------------------------------------------------------ correo, avisos de cuota y envío de propuestas
+
+import socket  # noqa: E402
+
+import alertas  # noqa: E402
+import correo  # noqa: E402
+
+_VARS_CORREO = ("RESEND_API_KEY", "SMTP_HOST", "SMTP_PUERTO", "SMTP_USUARIO", "SMTP_CLAVE", "SMTP_SEGURIDAD",
+                "ALERTA_EMAIL_DESTINO", "ALERTA_UMBRALES", "EMAIL_REMITENTE", "EMAIL_RESPONDER_A", "APP_URL")
+
+
+@pytest.fixture
+def sin_correo(monkeypatch):
+    for v in _VARS_CORREO:
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr(alertas, "_ultimo_fallo", {"t": 0.0})
+    monkeypatch.setattr(alertas, "_ultima_prueba", {"t": 0.0})
+    monkeypatch.setattr(alertas, "_real", {"t": 0.0, "d": None})
+    _limpiar_avisos()
+    return monkeypatch
+
+
+def _limpiar_avisos():
+    import db
+    with db.engine.begin() as conn:
+        conn.execute(db.alertas_enviadas.delete())
+
+
+def _con_resend(mp, destino="duena@example.com"):
+    mp.setenv("RESEND_API_KEY", "re_clave_de_prueba_123")
+    mp.setenv("ALERTA_EMAIL_DESTINO", destino)
+
+
+def _capturar(mp):
+    enviados = []
+    mp.setattr(correo, "enviar", lambda asunto, texto, html=None, destinos=None, reply_to=None:
+               enviados.append({"asunto": asunto, "texto": texto, "html": html, "destinos": destinos, "reply_to": reply_to}))
+    return enviados
+
+
+def _sumar_consumo(n):
+    import db
+    from sqlalchemy import insert as _ins
+    with db.engine.begin() as conn:
+        conn.execute(_ins(db.consumo).values(fecha=db.ahora(), tipo="radar", creditos=n, ahorrados=0, ciudad="Test", sector="Test"))
+
+
+def _cuota_para(mp, porcentaje_actual):
+    """Fija una cuota tal que el consumo actual del mes represente ese porcentaje."""
+    usados = alertas.situacion()["usados"]
+    cuota = max(10, round(usados * 100 / porcentaje_actual)) if usados else 100
+    mp.setenv("SERPAPI_CUOTA_MES", str(cuota))
+    return cuota
+
+
+# ---- correo
+def test_correo_destinatarios_proveedor_y_mascara(sin_correo):
+    mp = sin_correo
+    assert correo.proveedor() is None and not correo.configurado()
+    mp.setenv("ALERTA_EMAIL_DESTINO", "uno@example.com; malo, otro@example.org ,sin-arroba.com")
+    assert correo.destinatarios() == ["uno@example.com", "otro@example.org"]
+    mp.setenv("SMTP_HOST", "smtp.gmail.com")
+    assert correo.proveedor() == "smtp" and correo.configurado()
+    mp.setenv("RESEND_API_KEY", "re_x_123456")
+    assert correo.proveedor() == "resend"          # la API tiene prioridad
+    assert correo.enmascarar("jhony@gmail.com") == "j***@gmail.com"
+
+
+def test_correo_limpia_credenciales_de_los_errores(sin_correo):
+    sin_correo.setenv("SMTP_CLAVE", "abcd efgh ijkl mnop")
+    sin_correo.setenv("RESEND_API_KEY", "re_SECRETA_987654")
+    t = correo.limpiar("fallo con abcdefghijklmnop y abcd efgh ijkl mnop y re_SECRETA_987654")
+    assert "abcd" not in t and "re_SECRETA" not in t and t.count("***") == 3
+
+
+def test_correo_smtp_de_punta_a_punta(sin_correo):
+    pytest.importorskip("aiosmtpd")
+    from aiosmtpd.controller import Controller
+    from email import message_from_bytes
+    recibidos = []
+
+    class Manejador:
+        async def handle_DATA(self, server, session, envelope):
+            recibidos.append((envelope.mail_from, envelope.rcpt_tos, message_from_bytes(envelope.content)))
+            return "250 OK"
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        puerto = s.getsockname()[1]
+    ctl = Controller(Manejador(), hostname="127.0.0.1", port=puerto)
+    ctl.start()
+    try:
+        mp = sin_correo
+        mp.setenv("SMTP_HOST", "127.0.0.1"); mp.setenv("SMTP_PUERTO", str(puerto)); mp.setenv("SMTP_SEGURIDAD", "ninguna")
+        mp.setenv("EMAIL_REMITENTE", "Cazador Leads <avisos@example.com>")
+        mp.setenv("ALERTA_EMAIL_DESTINO", "duena@example.com")
+        correo.enviar("Aviso de prueba\r\nBcc: espia@example.com", "Hola\nmundo", "<p>Hola <b>mundo</b></p>", reply_to="respuestas@example.com")
+    finally:
+        ctl.stop()
+    assert len(recibidos) == 1
+    de, para, msg = recibidos[0]
+    assert para == ["duena@example.com"] and msg["Reply-To"] == "respuestas@example.com"
+    assert "Bcc" not in msg and "\n" not in msg["Subject"] and msg["Subject"].startswith("Aviso de prueba")  # sin inyección de cabeceras
+    assert msg.is_multipart() and "Hola" in msg.get_payload(0).get_payload(decode=True).decode()
+
+
+def test_correo_errores_claros_y_sin_secretos(sin_correo):
+    mp = sin_correo
+    with pytest.raises(correo.CorreoError, match="proveedor"):
+        correo.enviar("a", "b", destinos=["x@example.com"])
+    mp.setenv("RESEND_API_KEY", "re_x_123456")
+    with pytest.raises(correo.CorreoError, match="destinatarios"):
+        correo.enviar("a", "b")
+    mp.delenv("RESEND_API_KEY"); mp.setenv("SMTP_HOST", "127.0.0.1"); mp.setenv("SMTP_PUERTO", "1"); mp.setenv("SMTP_SEGURIDAD", "ninguna")
+    mp.setenv("SMTP_CLAVE", "clave-super-secreta")
+    with pytest.raises(correo.CorreoError) as e:
+        correo.enviar("a", "b", destinos=["x@example.com"])
+    assert "clave-super-secreta" not in str(e.value)
+    mp.delenv("SMTP_HOST"); mp.setenv("RESEND_API_KEY", "re_clave_123456")
+
+    class R:
+        status_code = 403
+        def json(self): return {"message": "Domain not verified re_clave_123456"}
+
+    mp.setattr(correo.requests, "post", lambda *a, **k: R())
+    with pytest.raises(correo.CorreoError) as e2:
+        correo.enviar("a", "b", destinos=["x@example.com"])
+    assert "403" in str(e2.value) and "re_clave_123456" not in str(e2.value)
+
+
+# ---- avisos de cuota
+def test_aviso_no_hace_nada_si_el_correo_no_esta_configurado(sin_correo):
+    enviados = _capturar(sin_correo)
+    _cuota_para(sin_correo, 50); _sumar_consumo(1000)
+    alertas.revisar()
+    assert enviados == []
+
+
+def test_aviso_al_80_por_ciento_una_sola_vez_al_mes(sin_correo):
+    mp = sin_correo; _con_resend(mp); enviados = _capturar(mp)
+    cuota = _cuota_para(mp, 50)
+    alertas.revisar()
+    assert enviados == []                                     # al 50% todavía no
+    _sumar_consumo(int(cuota * 0.8) - alertas.situacion()["usados"] + 1)
+    alertas.revisar(); alertas.revisar(); alertas.revisar()
+    assert len(enviados) == 1                                 # una sola vez aunque se revise muchas
+    e = enviados[0]
+    assert "80%" in e["asunto"] or "8" in e["asunto"]
+    assert str(cuota) in e["texto"] and "Proyección" in e["texto"] and "caché" in e["texto"] and e["destinos"] is None
+    assert "<" not in e["texto"] and "re_clave" not in e["texto"] + (e["html"] or "")
+    est = alertas.estado()
+    assert est["configurado"] and est["destinos"] == ["d***@example.com"] and est["enviadas_mes"][0]["umbral"] == 80
+
+
+def test_aviso_varios_umbrales_a_la_vez_envian_un_solo_correo(sin_correo):
+    mp = sin_correo; _con_resend(mp); enviados = _capturar(mp)
+    mp.setenv("ALERTA_UMBRALES", "50, 80 ,100,abc,500")
+    assert alertas.umbrales() == [50, 80, 100]
+    cuota = _cuota_para(mp, 30)
+    _sumar_consumo(cuota - alertas.situacion()["usados"] + 5)   # salta de golpe por encima del 100%
+    alertas.revisar(); alertas.revisar()
+    assert len(enviados) == 1 and "agotaste" in enviados[0]["asunto"]
+    assert len(alertas.estado()["enviadas_mes"]) == 3
+
+
+def test_aviso_fallido_libera_la_marca_y_reintenta_despues(sin_correo):
+    mp = sin_correo; _con_resend(mp)
+    intentos = []
+
+    def falla(*a, **k):
+        intentos.append(1)
+        raise correo.CorreoError("proveedor caído")
+
+    mp.setattr(correo, "enviar", falla)
+    cuota = _cuota_para(mp, 50)
+    _sumar_consumo(int(cuota * 0.9) - alertas.situacion()["usados"])
+    alertas.revisar()
+    assert len(intentos) == 1 and alertas.estado()["enviadas_mes"] == []   # no quedó marcado como enviado
+    alertas.revisar()
+    assert len(intentos) == 1                                              # respeta el enfriamiento tras fallar
+    mp.setattr(alertas, "_ultimo_fallo", {"t": 0.0})
+    enviados = _capturar(mp)
+    alertas.revisar()
+    assert len(enviados) == 1 and len(alertas.estado()["enviadas_mes"]) == 1
+
+
+def test_aviso_usa_el_consumo_real_de_la_cuenta_si_es_mayor(sin_correo):
+    import db
+    with db.engine.begin() as conn:
+        conn.execute(db.consumo.delete())                    # parte de cero: la app no ha registrado nada
+    mp = sin_correo; _con_resend(mp); enviados = _capturar(mp)
+    mp.setenv("SERPAPI_CUOTA_MES", "100000")                 # la app, por sí sola, estaría lejísimos del umbral
+    alertas.recordar_cuenta({"disponible": True, "usadas": 85, "cuota": 100, "restantes": 15, "plan": "Free"})
+    alertas.revisar()
+    assert len(enviados) == 1 and "85" in enviados[0]["asunto"] and "100" in enviados[0]["asunto"]
+
+
+def test_registrar_consumo_dispara_el_aviso(sin_correo):
+    import db
+    mp = sin_correo; _con_resend(mp); enviados = _capturar(mp)
+    cuota = _cuota_para(mp, 50)
+    db.registrar_consumo("radar", int(cuota * 0.85) - alertas.situacion()["usados"] + 1, 0, None, "Cali", "abogados")
+    assert len(enviados) == 1
+
+
+def test_enlace_al_panel_solo_si_hay_url(sin_correo):
+    s = alertas.situacion()
+    assert "Panel:" not in alertas.construir_mensaje(80, s)[1]
+    sin_correo.setenv("APP_URL", "https://mi-app.onrender.com/")
+    assert "Panel: https://mi-app.onrender.com/#analitica" in alertas.construir_mensaje(80, s)[1]
+
+
+def test_correo_de_prueba_solo_admin_y_con_limite(sin_correo, cliente, cliente_laura):
+    mp = sin_correo
+    assert cliente.post("/api/alertas/prueba", headers=H).status_code == 502          # sin configurar
+    _con_resend(mp); enviados = _capturar(mp)
+    assert cliente_laura.post("/api/alertas/prueba", headers=H).status_code == 403    # no es admin
+    assert cliente.post("/api/alertas/prueba").status_code == 403                     # CSRF
+    r = cliente.post("/api/alertas/prueba", headers=H)
+    assert r.status_code == 200 and r.get_json()["destinos"] == ["d***@example.com"]
+    assert enviados[0]["asunto"].startswith("[PRUEBA]")
+    assert cliente.post("/api/alertas/prueba", headers=H).status_code == 429          # una prueba cada 30 s
+    est = cliente.get("/api/alertas/estado").get_json()
+    assert est["configurado"] and est["puede_enviar"] and "d***@example.com" in est["destinos"] and "duena" not in str(est)
+
+
+# ---- envío de propuestas a leads
+def _crear_lead(email="cliente@negocio.co", estado="nuevo", nombre="Negocio Propuesta"):
+    import db
+    from sqlalchemy import insert as _ins
+    clave = f"test-envio-{nombre}-{email}-{estado}"
+    with db.engine.begin() as conn:
+        return conn.execute(_ins(db.leads).values(clave=clave, nombre=nombre, email=email, ciudad="Cali", nicho="abogados", pais="Colombia",
+                                                    estado=estado, creado_en=db.ahora(), actualizado_en=db.ahora(), score=70, prioridad="alta")).inserted_primary_key[0]
+
+
+BODY_OK = {"asunto": "Idea para tu web", "cuerpo": "Hola, vi que tu negocio no tiene web propia y quería proponerte una idea concreta.",
+           "confirmar": True, "plantilla": "sin_web:email:a"}
+
+
+def test_enviar_propuesta_al_lead_con_todas_las_salvaguardas(sin_correo, cliente):
+    import app as aplicacion
+    import db
+    from sqlalchemy import select as _sel
+    mp = sin_correo; enviados = _capturar(mp)
+    mp.setenv("REMITENTE_NOMBRE", "Jhony"); mp.setenv("AGENCIA_NOMBRE", "Mi Agencia"); mp.setenv("EMAIL_RESPONDER_A", "ventas@miagencia.co")
+    lid = _crear_lead()
+    url = f"/api/leads/{lid}/enviar-email"
+    assert cliente.post(url, json=BODY_OK).status_code == 403                                            # CSRF
+    assert cliente.post(url, headers=H, json=BODY_OK).status_code == 400                                 # correo sin configurar
+    mp.setenv("RESEND_API_KEY", "re_clave_de_prueba_123")
+    assert cliente.post(url, headers=H, json=dict(BODY_OK, confirmar=False)).status_code == 400          # sin confirmación explícita
+    assert cliente.post(url, headers=H, json=dict(BODY_OK, asunto="  ")).status_code == 400
+    assert cliente.post(url, headers=H, json=dict(BODY_OK, cuerpo="corto")).status_code == 400
+    r = cliente.post(url, headers=H, json=dict(BODY_OK, cuerpo=BODY_OK["cuerpo"] + " Soy [TU NOMBRE] de [TU AGENCIA]."))
+    assert r.status_code == 400 and "REMITENTE_NOMBRE" in r.get_json()["error"]                          # no sale con placeholders
+    assert enviados == []
+    ok = cliente.post(url, headers=H, json=BODY_OK)
+    assert ok.status_code == 200
+    out = ok.get_json()
+    assert out["estado"] == "contactado" and out["canal_contacto"] == "email" and out["proximo_seguimiento"]
+    assert out["envios_restantes_hoy"] >= 0 and any(h["canal"] == "email" for h in out["historial"])
+    e = enviados[0]
+    assert e["destinos"] == ["cliente@negocio.co"] and e["reply_to"] == "ventas@miagencia.co"             # solo al email del lead
+    assert "Mi Agencia" in e["texto"] and "responde «no»" in e["texto"] and BODY_OK["cuerpo"] in e["texto"]  # firma y baja
+    with db.engine.connect() as conn:
+        fila = conn.execute(_sel(db.envios).where(db.envios.c.lead_id == lid)).mappings().one()
+    assert fila["estado"] == "enviado" and fila["destino"] == "cliente@negocio.co" and fila["usuario_id"]
+    assert cliente.post(url, headers=H, json=BODY_OK).status_code == 409                                 # no repetir en 24 h
+
+
+def test_no_envia_a_leads_sin_email_cerrados_o_descartados(sin_correo, cliente):
+    mp = sin_correo; enviados = _capturar(mp); mp.setenv("RESEND_API_KEY", "re_clave_de_prueba_123")
+    sin_email = _crear_lead(email="", nombre="Sin Email")
+    descartado = _crear_lead(estado="descartado", nombre="Descartado")
+    cerrado = _crear_lead(estado="cerrado", nombre="Cerrado")
+    malo = _crear_lead(email="no-es-un-email", nombre="Email Malo")
+    for lid in (sin_email, descartado, cerrado, malo):
+        assert cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=BODY_OK).status_code == 400
+    assert cliente.post("/api/leads/999999/enviar-email", headers=H, json=BODY_OK).status_code == 404
+    assert enviados == []
+
+
+def test_limite_diario_de_envios(sin_correo, cliente):
+    import app as aplicacion
+    mp = sin_correo; enviados = _capturar(mp); mp.setenv("RESEND_API_KEY", "re_clave_de_prueba_123")
+    mp.setattr(aplicacion, "ENVIO_MAX_DIA", aplicacion._enviados_hoy() + 1)
+    a, b = _crear_lead(nombre="Lead Limite A", email="a@limite.co"), _crear_lead(nombre="Lead Limite B", email="b@limite.co")
+    assert cliente.post(f"/api/leads/{a}/enviar-email", headers=H, json=BODY_OK).status_code == 200
+    r = cliente.post(f"/api/leads/{b}/enviar-email", headers=H, json=BODY_OK)
+    assert r.status_code == 429 and "Límite diario" in r.get_json()["error"]
+    assert len(enviados) == 1
+
+
+def test_error_del_proveedor_se_registra_y_no_marca_contacto(sin_correo, cliente):
+    import db
+    from sqlalchemy import select as _sel
+    mp = sin_correo; mp.setenv("RESEND_API_KEY", "re_clave_de_prueba_123")
+
+    def falla(*a, **k):
+        raise correo.CorreoError("Resend rechazó el envío (403): dominio no verificado")
+
+    mp.setattr(correo, "enviar", falla)
+    lid = _crear_lead(nombre="Lead Falla", email="falla@negocio.co")
+    r = cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=BODY_OK)
+    assert r.status_code == 502 and "dominio no verificado" in r.get_json()["error"]
+    assert cliente.get(f"/api/leads/{lid}").get_json()["estado"] == "nuevo"           # no cuenta como contactado
+    with db.engine.connect() as conn:
+        fila = conn.execute(_sel(db.envios).where(db.envios.c.lead_id == lid)).mappings().one()
+    assert fila["estado"] == "error" and "403" in fila["error"]
+    mp.setattr(correo, "enviar", lambda *a, **k: None)
+    assert cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=BODY_OK).status_code == 200   # un error no bloquea el reintento

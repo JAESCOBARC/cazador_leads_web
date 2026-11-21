@@ -26,6 +26,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import escaner
 import mensajes
+import alertas
+import correo
 import radar
 import redes
 from cazador_leads import CazadorLeads
@@ -361,6 +363,32 @@ def mensaje_lead(lead_id):
     return jsonify(m)
 
 
+def _aplicar_toque(lead_id, user_id, canal, plantilla=None, nota=None):
+    """Registra un contacto y agenda el siguiente según la secuencia (día +3, luego +4).
+    Devuelve None si todo va bien, o (mensaje, código http)."""
+    L = db.leads
+    with db.engine.begin() as conn:
+        lead = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
+        if not lead:
+            return 'Lead no encontrado', 404
+        if lead['estado'] in ('cerrado', 'descartado'):
+            return 'Este lead ya está cerrado o descartado', 400
+        previos = conn.execute(select(func.count()).select_from(db.contactos).where(
+            db.contactos.c.lead_id == lead_id, db.contactos.c.estado == 'contactado')).scalar()
+        estado = lead['estado'] if lead['estado'] != 'nuevo' else 'contactado'
+        dias = mensajes.PASOS_DIAS.get(previos)
+        cambios = dict(estado=estado, canal_contacto=canal, actualizado_en=db.ahora(),
+                       asignado_a=lead['asignado_a'] or user_id,
+                       proximo_seguimiento=date.today() + timedelta(days=dias) if dias else None)
+        if not lead['contactado_en']:
+            cambios['contactado_en'] = db.ahora()
+        conn.execute(update(L).where(L.c.id == lead_id).values(**cambios))
+        conn.execute(insert(db.contactos).values(
+            lead_id=lead_id, usuario_id=user_id, estado='contactado', canal=canal,
+            nota=(nota or '')[:2000], fecha=db.ahora(), plantilla=(plantilla or '')[:60] or None))
+    return None
+
+
 @app.route('/api/leads/<int:lead_id>/toque', methods=['POST'])
 def registrar_toque(lead_id):
     """Registra un nuevo contacto (mensaje inicial o seguimiento) y agenda el siguiente
@@ -369,28 +397,103 @@ def registrar_toque(lead_id):
     canal = d.get('canal')
     if canal not in db.CANALES:
         return jsonify({'error': 'Canal no válido'}), 400
-    L = db.leads
-    with db.engine.begin() as conn:
-        lead = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
-        if not lead:
-            return jsonify({'error': 'Lead no encontrado'}), 404
-        if lead['estado'] in ('cerrado', 'descartado'):
-            return jsonify({'error': 'Este lead ya está cerrado o descartado'}), 400
-        previos = conn.execute(select(func.count()).select_from(db.contactos).where(
-            db.contactos.c.lead_id == lead_id, db.contactos.c.estado == 'contactado')).scalar()
-        estado = lead['estado'] if lead['estado'] != 'nuevo' else 'contactado'
-        dias = mensajes.PASOS_DIAS.get(previos)
-        cambios = dict(estado=estado, canal_contacto=canal, actualizado_en=db.ahora(),
-                       asignado_a=lead['asignado_a'] or request.user['id'],
-                       proximo_seguimiento=date.today() + timedelta(days=dias) if dias else None)
-        if not lead['contactado_en']:
-            cambios['contactado_en'] = db.ahora()
-        conn.execute(update(L).where(L.c.id == lead_id).values(**cambios))
-        conn.execute(insert(db.contactos).values(
-            lead_id=lead_id, usuario_id=request.user['id'], estado='contactado',
-            canal=canal, nota=(d.get('nota') or '')[:2000], fecha=db.ahora(),
-            plantilla=(d.get('plantilla') or '')[:60] or None))
+    err = _aplicar_toque(lead_id, request.user['id'], canal, d.get('plantilla'), d.get('nota'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
     return detalle_lead(lead_id)
+
+
+# ---------------------------------------------------------------- Envío de propuestas por email
+# Siempre manual (CLAUDE.md): un lead a la vez, con vista previa y confirmación, solo al email que el propio
+# negocio publicó, con límite diario, línea de baja y registro en el historial.
+
+ENVIO_MAX_DIA = max(1, int(os.environ.get('ENVIO_MAX_DIA', '5') or 5))
+
+
+def _inicio_del_dia():
+    return db.ahora().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _enviados_hoy(conn=None):
+    q = select(func.count()).select_from(db.envios).where(db.envios.c.estado == 'enviado', db.envios.c.fecha >= _inicio_del_dia())
+    if conn is not None:
+        return conn.execute(q).scalar()
+    with db.engine.connect() as c:
+        return c.execute(q).scalar()
+
+
+def _pie_envio():
+    firma = ' · '.join(x for x in (os.environ.get('REMITENTE_NOMBRE', '').strip(), os.environ.get('AGENCIA_NOMBRE', '').strip()) if x)
+    return ('\n\n--\n' + (firma + '\n' if firma else '') +
+            'Te escribo porque encontré tu negocio en Google Maps. Si no quieres recibir más mensajes, '
+            'responde «no» y no volveré a escribirte.')
+
+
+@app.route('/api/leads/<int:lead_id>/enviar-email', methods=['POST'])
+def enviar_email_lead(lead_id):
+    d = request.get_json(silent=True) or {}
+    if d.get('confirmar') is not True:
+        return jsonify({'error': 'Confirma el envío tras revisar el mensaje'}), 400
+    asunto = re.sub(r'\s+', ' ', str(d.get('asunto') or '')).strip()
+    cuerpo = str(d.get('cuerpo') or '').strip()
+    if not 3 <= len(asunto) <= 200:
+        return jsonify({'error': 'El asunto debe tener entre 3 y 200 caracteres'}), 400
+    if not 20 <= len(cuerpo) <= 5000:
+        return jsonify({'error': 'El mensaje debe tener entre 20 y 5000 caracteres'}), 400
+    if re.search(r'\[TU [^\]]*\]', asunto + cuerpo):
+        return jsonify({'error': 'El mensaje aún tiene datos por completar ([TU NOMBRE], [TU CARGO], [TU AGENCIA]…). '
+                                 'Define REMITENTE_NOMBRE, REMITENTE_CARGO, AGENCIA_NOMBRE y REMITENTE_CONTACTO en la configuración.'}), 400
+    if not correo.proveedor():
+        return jsonify({'error': 'El envío de correo no está configurado (RESEND_API_KEY o SMTP_HOST)'}), 400
+    L, E = db.leads, db.envios
+    with db.engine.connect() as conn:
+        r = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
+        if not r:
+            return jsonify({'error': 'Lead no encontrado'}), 404
+        if r['estado'] in ('cerrado', 'descartado'):
+            return jsonify({'error': 'Este lead ya está cerrado o descartado'}), 400
+        destino = (r['email'] or '').strip()
+        if not correo._EMAIL.match(destino):
+            return jsonify({'error': 'Este lead no tiene un email publicado. Búscalo en su web o en sus redes'}), 400
+        if _enviados_hoy(conn) >= ENVIO_MAX_DIA:
+            return jsonify({'error': f'Límite diario alcanzado ({ENVIO_MAX_DIA} correos). Se recomienda no enviar en masa'}), 429
+        reciente = conn.execute(select(func.count()).select_from(E).where(
+            E.c.lead_id == lead_id, E.c.estado == 'enviado', E.c.fecha >= db.ahora() - timedelta(hours=24))).scalar()
+        if reciente:
+            return jsonify({'error': 'Ya enviaste un correo a este lead en las últimas 24 horas'}), 409
+    try:
+        correo.enviar(asunto, cuerpo + _pie_envio(), destinos=[destino], reply_to=os.environ.get('EMAIL_RESPONDER_A') or None)
+    except correo.CorreoError as e:
+        with db.engine.begin() as conn:
+            conn.execute(insert(E).values(lead_id=lead_id, usuario_id=request.user['id'], destino=destino, asunto=asunto[:255],
+                                          estado='error', error=str(e)[:250], fecha=db.ahora()))
+        return jsonify({'error': str(e)}), 502
+    with db.engine.begin() as conn:
+        conn.execute(insert(E).values(lead_id=lead_id, usuario_id=request.user['id'], destino=destino, asunto=asunto[:255],
+                                      estado='enviado', fecha=db.ahora()))
+    _aplicar_toque(lead_id, request.user['id'], 'email', d.get('plantilla'), f'Correo enviado: {asunto}')
+    out = detalle_lead(lead_id).get_json()
+    out['envios_restantes_hoy'] = max(0, ENVIO_MAX_DIA - _enviados_hoy())
+    return jsonify(out)
+
+
+# ---------------------------------------------------------------- Avisos por email (cuota de SerpAPI)
+
+@app.route('/api/alertas/estado')
+def alertas_estado():
+    e = alertas.estado()
+    e.update(puede_enviar=bool(correo.proveedor()), limite_dia=ENVIO_MAX_DIA, enviados_hoy=_enviados_hoy())
+    return jsonify(e)
+
+
+@app.route('/api/alertas/prueba', methods=['POST'])
+@solo_admin
+def alertas_prueba():
+    try:
+        alertas.enviar_prueba()
+    except correo.CorreoError as e:
+        return jsonify({'error': str(e)}), (429 if str(e).startswith('Espera') else 502)
+    return jsonify({'ok': True, 'destinos': [correo.enmascarar(x) for x in correo.destinatarios()]})
 
 
 @app.route('/api/leads/<int:lead_id>/redes', methods=['POST'])
@@ -767,6 +870,8 @@ def serpapi_cuenta():
         # No se devuelve el texto del error: incluiría la URL con la clave
         out = {'disponible': False, 'motivo': 'No se pudo consultar la cuenta de SerpAPI'}
     _cuenta.update(t=time.time(), d=out)
+    alertas.recordar_cuenta(out)
+    alertas.revisar()  # la cuenta real puede incluir consumo ajeno a la app
     return jsonify(out)
 
 

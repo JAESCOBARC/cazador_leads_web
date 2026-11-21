@@ -311,6 +311,10 @@
                         <svg class="icono sm" aria-hidden="true"><use href="#i-message"/></svg>
                         <span>Abrir WhatsApp</span>
                     </a>
+                    <button type="button" class="btn btn-clear btn-sm" id="dlgEnviarEmail" hidden>
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-mail"/></svg>
+                        <span>Enviar por email</span>
+                    </button>
                     <button type="button" class="btn btn-primario btn-sm" id="dlgEnviado">
                         <svg class="icono sm" aria-hidden="true"><use href="#i-check"/></svg>
                         <span>Registrar envío</span>
@@ -443,6 +447,7 @@
     const CANALES = { whatsapp: 'WhatsApp', email: 'Email', telefono: 'Llamada' };
     const $ = (id) => document.getElementById(id);
     let YO = null;
+    let CORREO = { puede_enviar: false };
     let USUARIOS = [];
 
     function icono(nombre, clase) {
@@ -510,6 +515,7 @@
         $('yoRol').textContent = YO.rol === 'admin' ? 'Administrador' : 'Usuario';
         $('navUsuarios').hidden = YO.rol !== 'admin';
         await refrescarUsuarios();
+        try { CORREO = await api('/api/alertas/estado'); } catch (e) { /* el envío por email simplemente no se ofrece */ }
         try { await cargarSectores(); } catch (e) { aviso($('error'), 'error', e.message); }
         irA(location.hash.slice(1) || 'buscar');
     }
@@ -1213,7 +1219,11 @@
         $('dlgAsunto').hidden = !MSG.asunto;
         $('dlgAsunto').innerHTML = MSG.asunto ? `<strong>Asunto:</strong> ${escapeHtml(MSG.asunto)}` : '';
         $('dlgCuerpo').textContent = MSG.cuerpo;
-        $('dlgMsgMeta').textContent = `${MSG.palabras} palabras · ${MSG.toques} envío(s) registrados · plantilla ${MSG.plantilla}`;
+        const puedeMail = MSG.canal === 'email' && !!MSG.asunto && !!leadActual.email && CORREO.puede_enviar && !['cerrado', 'descartado'].includes(leadActual.estado);
+        $('dlgEnviarEmail').hidden = !puedeMail;
+        $('dlgCuerpo').contentEditable = puedeMail ? 'true' : 'false';
+        $('dlgMsgMeta').textContent = `${MSG.palabras} palabras · ${MSG.toques} envío(s) registrados · plantilla ${MSG.plantilla}` +
+            (puedeMail ? ` · puedes editar el texto antes de enviar (${CORREO.limite_dia - CORREO.enviados_hoy} envíos disponibles hoy)` : '');
         const wa = $('dlgWa');
         const base = leadActual.whatsapp || '';
         wa.hidden = !/^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(base) || MSG.canal === 'email';
@@ -1235,9 +1245,29 @@
         finally { btn.disabled = false; }
     });
 
+    // Envío de la propuesta por email: siempre manual, con vista previa y confirmación explícita
+    $('dlgEnviarEmail').addEventListener('click', async () => {
+        if (!MSG || !MSG.asunto) return;
+        const cuerpo = $('dlgCuerpo').innerText.trim();
+        if (!confirm(`Se enviará este correo a ${leadActual.email}\n\nAsunto: ${MSG.asunto}\n\n${cuerpo}\n\n` +
+            'Sale desde tu cuenta de correo configurada, con una línea para darse de baja, y queda registrado en el historial. ¿Enviar?')) return;
+        const btn = $('dlgEnviarEmail');
+        ocultar($('dlgError'));
+        btn.disabled = true;
+        try {
+            const r = await api(`/api/leads/${leadActual.id}/enviar-email`, json('POST', { asunto: MSG.asunto, cuerpo, confirmar: true, plantilla: MSG.plantilla }));
+            CORREO.enviados_hoy = (CORREO.limite_dia || 0) - r.envios_restantes_hoy;
+            await abrirLead(leadActual.id, true);
+            if ($('vista-leads').classList.contains('active')) cargarLeads();
+            if ($('vista-buscar').classList.contains('active')) marcarEnResultados(leadActual.id, leadActual.estado);
+            alert(`Correo enviado a ${leadActual.email}. Te quedan ${r.envios_restantes_hoy} envíos hoy.`);
+        } catch (e) { aviso($('dlgError'), 'error', e.message); }
+        finally { btn.disabled = false; }
+    });
+
     $('dlgCopiar').addEventListener('click', async () => {
         if (!MSG) return;
-        const txt = (MSG.asunto ? 'Asunto: ' + MSG.asunto + '\n\n' : '') + MSG.cuerpo;
+        const txt = (MSG.asunto ? 'Asunto: ' + MSG.asunto + '\n\n' : '') + $('dlgCuerpo').innerText.trim();
         const span = $('dlgCopiar').querySelector('span');
         try { await navigator.clipboard.writeText(txt); span.textContent = 'Copiado'; }
         catch (e) { span.textContent = 'No se pudo copiar'; }

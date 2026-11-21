@@ -147,6 +147,30 @@ vistas = Table(
 )
 
 
+# Una fila por umbral y mes ya avisado (evita repetir el correo de cuota).
+alertas_enviadas = Table(
+    'alertas_enviadas', metadata,
+    Column('clave', String(40), primary_key=True),   # "2026-11:80"
+    Column('umbral', Integer),
+    Column('enviada_en', DateTime, nullable=False, default=ahora),
+    Column('usados', Integer),
+    Column('cuota', Integer),
+)
+
+# Registro de los correos enviados a leads desde la app (auditoría y límite diario).
+envios = Table(
+    'envios', metadata,
+    Column('id', Integer, primary_key=True),
+    Column('lead_id', Integer, nullable=False),
+    Column('usuario_id', Integer, ForeignKey('usuarios.id')),
+    Column('destino', String(255), nullable=False),
+    Column('asunto', String(255)),
+    Column('estado', String(20), nullable=False),    # enviado | error
+    Column('error', String(255)),
+    Column('fecha', DateTime, nullable=False, default=ahora),
+)
+
+
 def registrar_consumo(tipo, creditos, ahorrados=0, usuario_id=None, ciudad=None, sector=None,
                       lead_id=None, detalle=None):
     """Anota un consumo. Nunca debe romper la operación principal si falla."""
@@ -160,6 +184,9 @@ def registrar_consumo(tipo, creditos, ahorrados=0, usuario_id=None, ciudad=None,
                 lead_id=lead_id, detalle=(detalle or '')[:255]))
     except Exception as e:  # noqa: BLE001
         print(f"[CONSUMO] No se pudo registrar: {e}")
+        return
+    import alertas  # import tardío: evita el ciclo db <-> alertas
+    alertas.revisar()  # avisa por email si se cruzó el umbral de cuota (nunca lanza)
 
 
 def init_db():

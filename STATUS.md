@@ -9,6 +9,7 @@
 - **Email y WhatsApp** leídos de la web del negocio (portada, contacto, aviso legal), con su fuente; nunca inventados.
 - **Instagram/Facebook:** lectura gratuita de la bio del perfil enlazado en Maps y búsqueda opcional en Google por lead (1 crédito) para email/WhatsApp/teléfono publicados; botón «Perfil» para verificar.
 - **Panel analítico tipo cuadro de mando** (ECharts): consumo de créditos mes a mes con cuota, proyección y ahorro por caché; KPIs con variación vs periodo anterior; embudo, actividad semanal, calidad, oportunidades, mapa de calor ciudad×sector, rendimiento, plantillas A/B y listas accionables; filtros cruzados, tooltips y vista de tabla.
+- **Correo**: aviso por email al 80 % de la cuota de SerpAPI (una vez al mes) y envío manual de propuestas a leads con email publicado (vista previa, confirmación, tope diario, baja y registro). Guía: `SETUP_CORREO.md`.
 - **Vistas guardadas** del panel: guardar filtros con nombre, compartir con el equipo y vista predeterminada al abrir.
 - **Lote de redes:** busca Instagram/Facebook de los leads nuevos sin email por prioridad, con tope de créditos; sin IA.
 - **Mapa 3D** (MapLibre): inclinado, con flechas de cámara, pines-flecha y columnas por puntuación; viaja a la ciudad escrita.
