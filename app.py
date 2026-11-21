@@ -171,7 +171,7 @@ def lanzar_radar():
 @app.route('/api/radar/<job_id>')
 def estado_radar(job_id):
     job = radar.estado(job_id)
-    if not job or job['user_id'] != request.user['id']:
+    if not job or job['user_id'] != request.user['id'] or job.get('tipo') == 'redes':
         return jsonify({'error': 'Exploración no encontrada'}), 404
     out = {'estado': job['estado'], 'etapa': job['etapa'], 'progreso': job['progreso'], 'error': job['error']}
     if job['estado'] == 'listo':
@@ -404,36 +404,50 @@ def buscar_redes(lead_id):
     except redes.RedesError as e:
         return jsonify({'error': str(e)}), 502
 
-    diag = _json(r['diagnostico'], {})
-    cont = diag.setdefault('contactos', {'emails': [], 'whatsapps': []})
-    for e in res['emails']:
-        if e['valor'] not in {x['valor'] for x in cont.setdefault('emails', [])}:
-            cont['emails'].append(e)
-    for w in res['whatsapps']:
-        if w['numero'] not in {x['numero'] for x in cont.setdefault('whatsapps', [])}:
-            cont['whatsapps'].append(w)
-    cambios = {}
-    if res['perfiles'] and not r['redes_sociales']:
-        cambios['redes_sociales'] = res['perfiles'][0]['url'][:500]
-    if res['emails'] and not r['email']:
-        cambios['email'] = res['emails'][0]['valor']
-    if res['whatsapps'] and not diag.get('whatsapp_confirmado'):
-        cambios['whatsapp'] = res['whatsapps'][0]['link']
-        diag['whatsapp_confirmado'] = True
-    if res['telefonos'] and not r['telefono']:
-        cambios['telefono'] = res['telefonos'][0]['numero'][:60]
-    diag['redes'] = dict(res, consultado_en=db.ahora().isoformat())
-    cambios['diagnostico'] = json.dumps(diag, ensure_ascii=False)
-
-    fila = dict(r, **cambios)
-    fila['diagnostico'] = cambios['diagnostico']
-    cambios['canal_recomendado'] = mensajes.canal_para(radar.lead_desde_fila(fila))
-    cambios['actualizado_en'] = db.ahora()
-    with db.engine.begin() as conn:
-        conn.execute(update(L).where(L.c.id == lead_id).values(**cambios))
+    radar.aplicar_redes(lead_id, res)
     out = detalle_lead(lead_id).get_json()
     out['redes_resultado'] = res
     return jsonify(out)
+
+
+@app.route('/api/redes/lote/candidatos')
+def candidatos_lote():
+    prioridad = request.args.get('prioridad')
+    return jsonify({'candidatos': radar.contar_candidatos_redes(prioridad), 'max_creditos': radar.LOTE_MAX_CREDITOS})
+
+
+@app.route('/api/redes/lote', methods=['POST'])
+def lanzar_lote_redes():
+    """Busca redes de varios leads (nuevos, sin email), de mayor a menor puntuación, hasta un tope de
+    créditos de SerpAPI fijado por quien lanza el lote. Sin IA: solo consultas a Google."""
+    d = request.get_json(silent=True) or {}
+    prioridad = d.get('prioridad') if d.get('prioridad') in db.PRIORIDADES else None
+    try:
+        tope = int(d.get('max_creditos'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Indica un tope de créditos (número entero)'}), 400
+    if tope < 1:
+        return jsonify({'error': 'El tope debe ser al menos 1 crédito'}), 400
+    key = os.environ.get('SERPAPI_KEY', '')
+    if not key or key == 'tu_api_key_aqui':
+        return jsonify({'error': 'SERPAPI_KEY no configurada en .env'}), 400
+    previo = radar.en_curso_lote(request.user['id'])
+    if previo:
+        return jsonify({'job_id': previo['id'], 'ya_en_curso': True}), 200
+    n = radar.contar_candidatos_redes(prioridad)
+    if not n:
+        return jsonify({'error': 'No hay leads nuevos sin email pendientes de buscar con ese filtro'}), 400
+    job_id = radar.iniciar_lote_redes(request.user['id'], prioridad, tope)
+    return jsonify({'job_id': job_id, 'candidatos': n, 'max_creditos': min(tope, radar.LOTE_MAX_CREDITOS)}), 202
+
+
+@app.route('/api/redes/lote/<job_id>')
+def estado_lote_redes(job_id):
+    job = radar.estado(job_id)
+    if not job or job['user_id'] != request.user['id'] or job.get('tipo') != 'redes':
+        return jsonify({'error': 'Búsqueda no encontrada'}), 404
+    return jsonify({'estado': job['estado'], 'etapa': job['etapa'], 'progreso': job['progreso'],
+                    'error': job['error'], 'resultado': job['resultado']})
 
 
 @app.route('/api/leads.csv')

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cazador Leads Web</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23172B45'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
@@ -79,6 +79,10 @@
                 <div class="radar-mapa-wrap" id="radarMapa">
                     <div id="mapa"></div>
                     <div class="radar-sweep" aria-hidden="true"></div>
+                    <div class="mapa-leyenda" aria-hidden="true">
+                        <span><i class="d d-alta"></i>Alta</span><span><i class="d d-media"></i>Media</span><span><i class="d d-baja"></i>Baja</span>
+                        <em>Altura = puntuación</em>
+                    </div>
                     <div class="radar-hint" id="radarHint">Escribe tu ciudad y la escaneamos</div>
                 </div>
 
@@ -125,7 +129,7 @@
                     <p class="radar-ayuda" id="credEstim"></p>
 
                     <div class="button-group" style="margin-top:0">
-                        <button class="btn btn-lima" id="searchBtn" onclick="escanear()">
+                        <button class="btn btn-acento" id="searchBtn" onclick="escanear()">
                             <svg class="icono sm" aria-hidden="true"><use href="#i-radar"/></svg>
                             <span>Escanear</span>
                         </button>
@@ -184,6 +188,10 @@
             </div>
             <div class="filtros-acciones">
                 <label class="check"><input type="checkbox" id="fSeg"> Solo seguimientos pendientes</label>
+                <button type="button" class="btn btn-clear btn-sm" id="btnLote">
+                    <svg class="icono sm" aria-hidden="true"><use href="#i-search"/></svg>
+                    <span>Buscar redes en lote</span>
+                </button>
                 <a class="btn btn-clear btn-sm" href="/api/leads.csv" style="text-decoration:none">
                     <svg class="icono sm" aria-hidden="true"><use href="#i-download"/></svg>
                     <span>Exportar CSV</span>
@@ -357,6 +365,43 @@
         </div>
     </dialog>
 
+    <!-- ============ MODAL: búsqueda de redes en lote ============ -->
+    <dialog id="dlgLote" aria-labelledby="dlTitulo">
+        <div class="dlg-cab">
+            <h2 id="dlTitulo">Buscar email y WhatsApp en redes</h2>
+            <button type="button" class="btn-icono" id="dlCerrar" aria-label="Cerrar">
+                <svg class="icono" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+        </div>
+        <div class="dlg-cuerpo">
+            <div class="aviso error" id="dlError" role="alert"></div>
+            <p class="ayuda" style="margin-bottom:12px">Busca el Instagram/Facebook de los leads <strong>nuevos sin email</strong>, de mayor a menor puntuación, y guarda lo que el negocio publica en su bio. Gasta 1 crédito de SerpAPI por lead (las consultas en caché no cuestan) y se detiene al llegar al tope. No usa IA.</p>
+            <div class="fila-2">
+                <div class="form-group">
+                    <label for="dlPrioridad">Leads de prioridad</label>
+                    <select id="dlPrioridad">
+                        <option value="alta">Alta</option>
+                        <option value="media">Media</option>
+                        <option value="baja">Baja</option>
+                        <option value="">Todas</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="dlTope">Tope de créditos</label>
+                    <input type="number" id="dlTope" min="1" max="50" value="10">
+                </div>
+            </div>
+            <p class="ayuda" id="dlInfo"></p>
+            <div class="prog" id="dlProg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="dlBarra"></div></div>
+            <p class="ayuda" id="dlEtapa" role="status"></p>
+            <div id="dlResultado"></div>
+            <div class="dlg-acciones">
+                <button type="button" class="btn btn-clear" id="dlCancelar">Cerrar</button>
+                <button type="button" class="btn btn-primario" id="dlIniciar"><span>Iniciar búsqueda</span></button>
+            </div>
+        </div>
+    </dialog>
+
     <!-- ============ MODAL: contraseña ============ -->
     <dialog id="dlgPass" aria-labelledby="dpTitulo">
         <div class="dlg-cab">
@@ -381,7 +426,7 @@
         </div>
     </dialog>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script>
     // ------------------------------------------------------------ utilidades
     const ESTADOS = {
@@ -448,7 +493,7 @@
         });
         if (location.hash !== '#' + vista) history.replaceState(null, '', '#' + vista);
         window.scrollTo(0, 0);
-        if (vista === 'buscar') setTimeout(() => { iniciarMapa(); if (mapa) mapa.invalidateSize(); }, 60);
+        if (vista === 'buscar') setTimeout(() => { iniciarMapa(); if (mapa) mapa.resize(); }, 60);
         if (vista === 'leads') cargarLeads();
         if (vista === 'analitica') cargarAnalitica();
         if (vista === 'usuarios') cargarUsuarios();
@@ -481,10 +526,11 @@
     };
     const TICKET = { alto: 'High ticket', medio: 'Medium ticket', bajo: 'Low ticket' };
     const PRIO = { alta: '🔥 Alta', media: 'Media', baja: 'Baja' };
-    const COLOR_PRIO = { alta: '#B8F04A', media: '#F59E0B', baja: '#94A3B8' };
+    const COLOR_PRIO = { alta: '#E11D74', media: '#E58A00', baja: '#5B6F99' };
+    const ESTILO_MAPA = 'https://tiles.openfreemap.org/styles/liberty';
     let SECTORES = [], COBERTURAS = {}, SEL = new Set();
     let RADAR = { leads: [], sectores: [], sector: '', opp: '' };
-    let mapa = null, capaPuntos = null, marcadores = {}, timerRadar = null;
+    let mapa = null, mapaListo = false, marcadores = [], timerRadar = null, orbita = null;
 
     const urlRed = (u) => /^https:\/\/([a-z0-9-]+\.)*(instagram|facebook)\.com\//i.test(u || '');
 
@@ -539,34 +585,105 @@
             : 'Elige al menos un sector. Cada sector consume ' + c.creditos_por_sector + ' crédito(s) de SerpAPI.';
     }
 
-    function iniciarMapa() {
-        if (mapa || !window.L) return;
-        mapa = L.map('mapa', { zoomControl: true }).setView([4.6, -74.1], 5);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(mapa);
-        capaPuntos = L.layerGroup().addTo(mapa);
+    // Flechas de cámara: girar (◀ ▶) e inclinar (▲ ▼)
+    class ControlFlechas {
+        onAdd(map) {
+            const c = document.createElement('div');
+            c.className = 'maplibregl-ctrl ctrl-flechas';
+            const b = (txt, tit, fn) => {
+                const x = document.createElement('button');
+                x.type = 'button'; x.textContent = txt; x.title = tit; x.setAttribute('aria-label', tit);
+                x.addEventListener('click', fn); c.appendChild(x);
+            };
+            b('▲', 'Inclinar más', () => map.easeTo({ pitch: Math.min(75, map.getPitch() + 10) }));
+            b('◀', 'Girar a la izquierda', () => map.easeTo({ bearing: map.getBearing() - 25 }));
+            b('⌖', 'Restablecer vista', () => map.easeTo({ pitch: 55, bearing: -20 }));
+            b('▶', 'Girar a la derecha', () => map.easeTo({ bearing: map.getBearing() + 25 }));
+            b('▼', 'Inclinar menos', () => map.easeTo({ pitch: Math.max(0, map.getPitch() - 10) }));
+            this._c = c;
+            return c;
+        }
+        onRemove() { this._c.remove(); }
     }
+
+    const geoVacio = () => ({ type: 'FeatureCollection', features: [] });
+    function circulo(lon, lat, r, n = 14) {
+        const dLat = r / 111320, dLon = r / (111320 * Math.cos(lat * Math.PI / 180));
+        const pts = [];
+        for (let i = 0; i <= n; i++) pts.push([lon + dLon * Math.cos(2 * Math.PI * i / n), lat + dLat * Math.sin(2 * Math.PI * i / n)]);
+        return [pts];
+    }
+
+    function iniciarMapa() {
+        if (mapa) return;
+        if (!window.maplibregl) { $('radarHint').textContent = 'No se pudo cargar el mapa 3D (sin conexión). El radar sigue funcionando.'; return; }
+        try {
+            mapa = new maplibregl.Map({ container: 'mapa', style: ESTILO_MAPA, center: [-74.1, 4.6], zoom: 3.2,
+                pitch: 50, bearing: -15, maxPitch: 75, attributionControl: { compact: true } });
+        } catch (e) {
+            mapa = null;
+            $('radarHint').textContent = 'Tu navegador no admite el mapa 3D (WebGL). El radar sigue funcionando.';
+            return;
+        }
+        mapa.addControl(new ControlFlechas(), 'top-right');
+        mapa.on('load', () => {
+            mapa.addSource('columnas', { type: 'geojson', data: geoVacio() });
+            mapa.addLayer({ id: 'columnas', type: 'fill-extrusion', source: 'columnas', paint: {
+                'fill-extrusion-color': ['get', 'color'], 'fill-extrusion-height': ['get', 'alto'],
+                'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.9 } });
+            mapaListo = true;
+        });
+    }
+    function cuandoListo(fn) {
+        if (!mapa) return;
+        if (mapaListo) fn(); else mapa.once('load', fn);
+    }
+    function limpiarMapa() {
+        marcadores.forEach(m => m.remove());
+        marcadores = [];
+        if (mapa && mapaListo) mapa.getSource('columnas').setData(geoVacio());
+    }
+
+    // Órbita lenta de la cámara mientras se escanea (respeta "reducir movimiento")
+    function iniciarOrbita() {
+        detenerOrbita();
+        if (!mapa || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const paso = () => {
+            if (mapa && !mapa.isMoving()) mapa.setBearing(mapa.getBearing() + 0.18);
+            orbita = requestAnimationFrame(paso);
+        };
+        orbita = requestAnimationFrame(paso);
+    }
+    function detenerOrbita() { if (orbita) cancelAnimationFrame(orbita); orbita = null; }
+
     function dibujarMapa(leads, centro) {
         iniciarMapa();
         if (!mapa) return;
-        capaPuntos.clearLayers();
-        marcadores = {};
-        const pts = [];
-        leads.forEach(l => {
-            if (l.lat == null || l.lon == null) return;
-            const m = L.circleMarker([l.lat, l.lon], {
-                radius: l.prioridad === 'alta' ? 9 : 7, color: '#0B1220', weight: 1.5,
-                fillColor: COLOR_PRIO[l.prioridad] || '#94A3B8', fillOpacity: .95
-            }).addTo(capaPuntos);
-            m.bindTooltip(`${l.nombre} · ${l.score}`);
-            m.on('click', () => irATarjeta(l.id));
-            marcadores[l.id] = m;
-            pts.push([l.lat, l.lon]);
+        cuandoListo(() => {
+            limpiarMapa();
+            mapa.resize();
+            const feats = [], limites = new maplibregl.LngLatBounds();
+            leads.forEach(l => {
+                if (l.lat == null || l.lon == null) return;
+                // columna: altura proporcional a la puntuación
+                feats.push({ type: 'Feature', properties: { color: COLOR_PRIO[l.prioridad] || '#5B6F99', alto: 40 + (l.score || 0) * 7 },
+                    geometry: { type: 'Polygon', coordinates: circulo(l.lon, l.lat, 38) } });
+                // flecha con la puntuación, cuya punta señala el negocio
+                const el = document.createElement('button');
+                el.type = 'button'; el.className = 'pin pin-' + (l.prioridad || 'baja');
+                el.innerHTML = `<b>${Number(l.score) || 0}</b>`;
+                el.title = `${l.nombre} · puntuación ${l.score}`;
+                el.setAttribute('aria-label', `${l.nombre}, puntuación ${l.score}`);
+                el.addEventListener('click', (ev) => { ev.stopPropagation(); irATarjeta(l.id); });
+                marcadores.push(new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([l.lon, l.lat]).addTo(mapa));
+                limites.extend([l.lon, l.lat]);
+            });
+            mapa.getSource('columnas').setData({ type: 'FeatureCollection', features: feats });
+            if (feats.length) mapa.fitBounds(limites, { padding: { top: 90, bottom: 50, left: 50, right: 60 },
+                maxZoom: 15.2, pitch: 55, bearing: -20, duration: 2200 });
+            else if (centro) mapa.flyTo({ center: [centro.lon, centro.lat], zoom: 12, pitch: 55, bearing: -20 });
+            $('radarHint').style.display = 'none';
         });
-        mapa.invalidateSize();
-        if (pts.length) mapa.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
-        else if (centro) mapa.setView([centro.lat, centro.lon], 12);
-        $('radarHint').style.display = 'none';
     }
 
     // El mapa viaja a la ciudad escrita (al salir de los campos y al lanzar el escaneo)
@@ -579,7 +696,7 @@
         iniciarMapa();
         try {
             const g = await api('/api/geocodificar?' + new URLSearchParams({ ciudad, pais }));
-            if (mapa) { mapa.invalidateSize(); mapa.flyTo([g.lat, g.lon], 12, { duration: 1.4 }); }
+            if (mapa) { mapa.resize(); mapa.flyTo({ center: [g.lon, g.lat], zoom: 12, pitch: 55, bearing: -20, duration: 2600 }); }
             $('radarHint').textContent = `${ciudad}, ${pais} · pulsa Escanear`;
         } catch (e) { ultimaGeo = ''; }
     }
@@ -601,6 +718,7 @@
         $('radarEtapa').textContent = 'Lanzando el radar…';
         btn.disabled = true; btn.classList.add('cargando'); btn.setAttribute('aria-busy', 'true');
         moverMapa();
+        iniciarOrbita();
         try {
             const { job_id } = await api('/api/radar', json('POST', {
                 ciudad, pais, sectores: [...SEL], cobertura: $('cobertura').value,
@@ -612,6 +730,7 @@
             $('radarEtapa').textContent = '';
         } finally {
             clearInterval(timerRadar);
+            detenerOrbita();
             $('radarMapa').classList.remove('escaneando');
             $('radarProg').classList.remove('active');
             btn.disabled = false; btn.classList.remove('cargando'); btn.removeAttribute('aria-busy');
@@ -635,6 +754,7 @@
     }
 
     function mostrarRadar(res) {
+        detenerOrbita();
         RADAR = { leads: res.leads || [], sectores: res.sectores || [], sector: '', opp: '' };
         const altas = RADAR.leads.filter(l => l.prioridad === 'alta').length;
         $('radarKpis').innerHTML = `
@@ -785,7 +905,7 @@
         pintarSectores(); actualizarCreditos();
         $('results').classList.remove('active');
         ocultar($('error'));
-        if (capaPuntos) capaPuntos.clearLayers();
+        limpiarMapa();
         $('radarHint').style.display = '';
         $('radarHint').textContent = 'Escribe tu ciudad y la escaneamos';
         ultimaGeo = '';
@@ -858,6 +978,84 @@
             <thead><tr><th>Negocio</th><th>Prioridad</th><th>Teléfono</th><th>Estado</th><th>Asignado a</th><th>Seguimiento</th><th></th></tr></thead>
             <tbody>${filas}</tbody></table></div>`;
     }
+
+    // ------------------------------------------------------------ LOTE DE REDES
+    const dlgLote = $('dlgLote');
+    let lote = { candidatos: 0, max: 50 }, timerLote = null;
+
+    function infoLote() {
+        const tope = Math.max(0, Math.min(Number($('dlTope').value) || 0, lote.max));
+        $('dlInfo').textContent = lote.candidatos
+            ? `${lote.candidatos} leads nuevos sin email pendientes. Gastarás como máximo ${Math.min(tope, lote.candidatos)} crédito(s) (tope permitido: ${lote.max}).`
+            : 'No hay leads nuevos sin email pendientes de buscar con este filtro.';
+        $('dlIniciar').disabled = !lote.candidatos || tope < 1;
+    }
+    async function actualizarCandidatos() {
+        try {
+            const d = await api('/api/redes/lote/candidatos?' + new URLSearchParams({ prioridad: $('dlPrioridad').value }));
+            lote = { candidatos: d.candidatos, max: d.max_creditos };
+            $('dlTope').max = d.max_creditos;
+            infoLote();
+        } catch (e) { aviso($('dlError'), 'error', e.message); }
+    }
+    async function abrirLote() {
+        ocultar($('dlError'));
+        $('dlResultado').innerHTML = ''; $('dlEtapa').textContent = '';
+        $('dlProg').classList.remove('active');
+        dlgLote.showModal();
+        await actualizarCandidatos();
+    }
+    function pintarResultadoLote(r) {
+        const f = (n, txt) => `<li class="${n ? 'ok' : ''}" data-s="${n ? '✓' : '–'}">${txt}</li>`;
+        const hall = r.hallazgos.map(h => `<div><strong>${escapeHtml(h.nombre)}</strong> — ${[
+            h.email ? escapeHtml(h.email) : '', h.whatsapp ? 'WhatsApp' : '', h.perfil ? 'perfil' : ''].filter(Boolean).join(' · ')}</div>`).join('');
+        $('dlResultado').innerHTML = `<ul class="res-lote">
+            ${f(r.procesados, `Leads consultados: <strong>${r.procesados}</strong> · créditos usados: <strong>${r.creditos_usados}</strong> de ${r.max_creditos}`)}
+            ${f(r.con_email, `Con email publicado: <strong>${r.con_email}</strong>`)}
+            ${f(r.con_whatsapp, `Con WhatsApp publicado: <strong>${r.con_whatsapp}</strong>`)}
+            ${f(r.con_telefono, `Con teléfono nuevo: <strong>${r.con_telefono}</strong>`)}
+            ${f(r.con_perfil, `Con perfil encontrado: <strong>${r.con_perfil}</strong>`)}
+            ${f(0, `Sin datos: ${r.sin_datos}${r.fallidos ? ` · con error: ${r.fallidos}` : ''}`)}
+        </ul>
+        ${r.detenido_por_tope ? '<p class="ayuda">Se detuvo al llegar al tope. Quedan leads pendientes: puedes lanzar otro lote.</p>' : ''}
+        ${hall ? `<div class="hallazgos">${hall}</div><p class="ayuda" style="margin-top:6px">Verifica que cada perfil sea del negocio antes de escribir.</p>` : ''}`;
+    }
+    async function iniciarLote() {
+        ocultar($('dlError'));
+        const btn = $('dlIniciar');
+        btn.disabled = true; btn.classList.add('cargando');
+        $('dlResultado').innerHTML = '';
+        try {
+            const { job_id } = await api('/api/redes/lote', json('POST', {
+                prioridad: $('dlPrioridad').value, max_creditos: Number($('dlTope').value) }));
+            $('dlProg').classList.add('active');
+            await new Promise((resolve, reject) => {
+                clearInterval(timerLote);
+                timerLote = setInterval(async () => {
+                    try {
+                        const d = await api('/api/redes/lote/' + job_id);
+                        $('dlBarra').style.width = d.progreso + '%';
+                        $('dlEtapa').textContent = d.etapa;
+                        if (d.estado === 'listo') { clearInterval(timerLote); pintarResultadoLote(d.resultado); resolve(); }
+                        else if (d.estado === 'error') { clearInterval(timerLote); reject(new Error(d.error || 'Error en la búsqueda')); }
+                    } catch (e) { clearInterval(timerLote); reject(e); }
+                }, 1000);
+            });
+            if ($('vista-leads').classList.contains('active')) cargarLeads();
+        } catch (e) {
+            aviso($('dlError'), 'error', e.message);
+        } finally {
+            btn.classList.remove('cargando');
+            await actualizarCandidatos();
+        }
+    }
+    $('btnLote').addEventListener('click', abrirLote);
+    $('dlPrioridad').addEventListener('change', actualizarCandidatos);
+    $('dlTope').addEventListener('input', infoLote);
+    $('dlIniciar').addEventListener('click', iniciarLote);
+    $('dlCerrar').addEventListener('click', () => dlgLote.close());
+    $('dlCancelar').addEventListener('click', () => dlgLote.close());
+    dlgLote.addEventListener('click', (e) => { if (e.target === dlgLote) dlgLote.close(); });
 
     // ------------------------------------------------------------ MODAL LEAD
     let leadActual = null;

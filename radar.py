@@ -17,10 +17,11 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 
 import db
 import escaner
+import mensajes
 import redes
 from cazador_leads import CazadorLeads
 
@@ -29,6 +30,7 @@ BASE_DIR = Path(__file__).parent
 # cobertura -> (puntos de la cuadrícula, páginas por punto). Créditos SerpAPI = puntos x páginas por sector.
 COBERTURAS = {"rapida": (1, 1), "normal": (1, 2), "profunda": (5, 2)}
 MAX_SECTORES = 4
+LOTE_MAX_CREDITOS = max(1, int(os.getenv('LOTE_MAX_CREDITOS', '50') or 50))
 
 JOBS = {}
 _lock = threading.Lock()
@@ -270,3 +272,131 @@ def lead_desde_fila(r):
         "oportunidades": j(r["oportunidades"], []), "diagnostico": diag,
         "competidores_nombres": diag.get("competidores_nombres", []),
     }
+
+
+# ------------------------------------------------------------------ redes sociales (lead a lead y en lote)
+
+def aplicar_redes(lead_id, res):
+    """Guarda en el lead lo que el negocio publicó en su bio (resultado de redes.buscar_perfiles).
+    Nunca pisa un email, teléfono o perfil que ya estuvieran guardados."""
+    L = db.leads
+    with db.engine.begin() as conn:
+        r = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
+        if not r:
+            return None
+        try:
+            diag = json.loads(r["diagnostico"]) if r["diagnostico"] else {}
+        except ValueError:
+            diag = {}
+        cont = diag.setdefault("contactos", {"emails": [], "whatsapps": []})
+        for e in res["emails"]:
+            if e["valor"] not in {x["valor"] for x in cont.setdefault("emails", [])}:
+                cont["emails"].append(e)
+        for w in res["whatsapps"]:
+            if w["numero"] not in {x["numero"] for x in cont.setdefault("whatsapps", [])}:
+                cont["whatsapps"].append(w)
+        cambios = {}
+        if res["perfiles"] and not r["redes_sociales"]:
+            cambios["redes_sociales"] = res["perfiles"][0]["url"][:500]
+        if res["emails"] and not r["email"]:
+            cambios["email"] = res["emails"][0]["valor"]
+        if res["whatsapps"] and not diag.get("whatsapp_confirmado"):
+            cambios["whatsapp"] = res["whatsapps"][0]["link"]
+            diag["whatsapp_confirmado"] = True
+        if res["telefonos"] and not r["telefono"]:
+            cambios["telefono"] = res["telefonos"][0]["numero"][:60]
+        diag["redes"] = dict(res, consultado_en=db.ahora().isoformat())
+        cambios["diagnostico"] = json.dumps(diag, ensure_ascii=False)
+        cambios["canal_recomendado"] = mensajes.canal_para(lead_desde_fila(dict(r, **cambios)))
+        cambios["actualizado_en"] = db.ahora()
+        conn.execute(update(L).where(L.c.id == lead_id).values(**cambios))
+    return cambios
+
+
+def _cond_candidatos_redes(prioridad=None):
+    L = db.leads
+    cond = [L.c.estado == "nuevo", or_(L.c.email.is_(None), L.c.email == ""),
+            or_(L.c.diagnostico.is_(None), ~L.c.diagnostico.like('%"redes"%'))]
+    if prioridad in db.PRIORIDADES:
+        cond.append(L.c.prioridad == prioridad)
+    return cond
+
+
+def contar_candidatos_redes(prioridad=None):
+    with db.engine.connect() as conn:
+        return conn.execute(select(func.count()).select_from(db.leads)
+                            .where(*_cond_candidatos_redes(prioridad))).scalar()
+
+
+def candidatos_redes(prioridad=None, limite=200):
+    """Leads nuevos, sin email y sin búsqueda de redes previa; primero los de mayor puntuación."""
+    L = db.leads
+    with db.engine.connect() as conn:
+        return conn.execute(select(L.c.id, L.c.nombre, L.c.ciudad).where(*_cond_candidatos_redes(prioridad))
+                            .order_by(func.coalesce(L.c.score, 0).desc(), L.c.id).limit(limite)).all()
+
+
+def en_curso_lote(user_id):
+    for j in JOBS.values():
+        if j.get("tipo") == "redes" and j["user_id"] == user_id and j["estado"] == "ejecutando":
+            return j
+    return None
+
+
+def iniciar_lote_redes(user_id, prioridad, max_creditos):
+    max_creditos = max(1, min(int(max_creditos), LOTE_MAX_CREDITOS))
+    job_id = uuid.uuid4().hex[:12]
+    job = {"id": job_id, "tipo": "redes", "estado": "ejecutando", "etapa": "Preparando la búsqueda…",
+           "progreso": 2, "resultado": None, "error": None, "user_id": user_id, "creado": time.time()}
+    with _lock:
+        JOBS[job_id] = job
+    threading.Thread(target=_ejecutar_lote, daemon=True, args=(job, prioridad, max_creditos)).start()
+    return job_id
+
+
+def _ejecutar_lote(job, prioridad, max_creditos):
+    try:
+        cands = candidatos_redes(prioridad)
+        cache = CacheDB()
+        usados = fallos_seguidos = 0
+        st = {"procesados": 0, "con_email": 0, "con_whatsapp": 0, "con_telefono": 0, "con_perfil": 0,
+              "sin_datos": 0, "fallidos": 0}
+        hallazgos = []
+        for i, c in enumerate(cands):
+            if usados >= max_creditos:
+                break
+            _set(job, f"Buscando redes de {c.nombre} ({i + 1}/{len(cands)})…",
+                 100 * max(usados / max_creditos, i / max(1, len(cands))))
+            try:
+                res = redes.buscar_perfiles(c.nombre, c.ciudad or "", cache=cache)
+            except redes.RedesError as e:
+                if "SERPAPI_KEY" in str(e):
+                    raise
+                st["fallidos"] += 1
+                fallos_seguidos += 1
+                if fallos_seguidos >= 3:
+                    raise RuntimeError(f"Se detuvo tras 3 errores seguidos: {e}") from e
+                continue
+            fallos_seguidos = 0
+            usados += res["creditos"]
+            aplicar_redes(c.id, res)
+            st["procesados"] += 1
+            st["con_email"] += bool(res["emails"])
+            st["con_whatsapp"] += bool(res["whatsapps"])
+            st["con_telefono"] += bool(res["telefonos"])
+            st["con_perfil"] += bool(res["perfiles"])
+            if not (res["emails"] or res["whatsapps"] or res["telefonos"] or res["perfiles"]):
+                st["sin_datos"] += 1
+            elif len(hallazgos) < 40:
+                hallazgos.append({"id": c.id, "nombre": c.nombre,
+                                  "email": res["emails"][0]["valor"] if res["emails"] else None,
+                                  "whatsapp": bool(res["whatsapps"]),
+                                  "perfil": res["perfiles"][0]["url"] if res["perfiles"] else None})
+        job["resultado"] = dict(st, creditos_usados=usados, max_creditos=max_creditos,
+                                candidatos=len(cands), hallazgos=hallazgos,
+                                detenido_por_tope=usados >= max_creditos and st["procesados"] < len(cands))
+        job.update(estado="listo", etapa="Búsqueda completada", progreso=100)
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        job.update(estado="error", error=str(e), etapa="Error")

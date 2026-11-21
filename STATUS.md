@@ -8,7 +8,8 @@
 - **Escáner de oportunidades** (`escaner.py`): sin web, web débil, sin medición para Ads, web que no capta, SEO local, reputación y app de gestión (hipótesis). Ver tabla en `CLAUDE.md`.
 - **Email y WhatsApp** leídos de la web del negocio (portada, contacto, aviso legal), con su fuente; nunca inventados.
 - **Instagram/Facebook:** lectura gratuita de la bio del perfil enlazado en Maps y búsqueda opcional en Google por lead (1 crédito) para email/WhatsApp/teléfono publicados; botón «Perfil» para verificar.
-- **Mapa:** se mueve a la ciudad escrita antes de escanear.
+- **Lote de redes:** busca Instagram/Facebook de los leads nuevos sin email por prioridad, con tope de créditos; sin IA.
+- **Mapa 3D** (MapLibre): inclinado, con flechas de cámara, pines-flecha y columnas por puntuación; viaja a la ciudad escrita.
 - **Score y prioridad** por lead; ticket estimado por sector; mapa con puntos por prioridad.
 - **Mensajes** (`mensajes.py`) con datos reales de Maps, un servicio por mensaje, ≤150 palabras, variantes A/B y secuencia de seguimiento (día 0, +3, +4).
 - **Analítica** por canal, nicho, ciudad, usuario, tipo de oportunidad, prioridad y plantilla.
@@ -23,7 +24,6 @@
 - Las webs se leen con peticiones HTTP normales (sin gastar créditos), con protección contra SSRF.
 
 ## Pendiente / ideas
-- Búsqueda de redes en lote para los leads de prioridad alta (hoy es lead a lead para controlar créditos).
 - PageSpeed Insights (API gratuita) para medir velocidad móvil real.
 - Mockup/demo de web para los leads de prioridad alta.
 - Envío automatizado (Klaviyo): sigue en pausa por la regla de verificación manual.

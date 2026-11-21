@@ -604,3 +604,115 @@ def test_geocodificar_para_mover_el_mapa(cliente, monkeypatch):
     assert ok.status_code == 200 and ok.get_json()["lat"] == 37.18
     assert cliente.get("/api/geocodificar?ciudad=Nadaland&pais=X").status_code == 404
     assert cliente.get("/api/geocodificar?ciudad=Granada").status_code == 400
+
+
+# ------------------------------------------------------------------ lote de redes (sin IA)
+
+def _sembrar_leads_para_lote(cliente, monkeypatch, ciudad, nombres):
+    from cazador_leads import CazadorLeads
+
+    def falso(self, paginas=None, puntos=1, cache=None, progreso=None):
+        self.geo = {"lat": 5.0, "lon": 5.0, "display_name": "X"}
+        self.creditos_usados = 1
+        out = []
+        for i, n in enumerate(nombres):
+            out.append(dict(NEGOCIOS_FALSOS[0], nombre=n, telefono=f"+57 315 {sum(map(ord, ciudad)):04d} 10{i:02d}",
+                            rating=4.9 - i * 0.3, resenas=300 - i * 80))
+        return out
+
+    monkeypatch.setattr(CazadorLeads, "buscar_en_google", falso)
+    r = cliente.post("/api/radar", headers=H, json={"ciudad": ciudad, "pais": "Colombia", "sectores": ["odontólogos"]})
+    d = esperar(cliente, r.get_json()["job_id"])
+    assert d["estado"] == "listo", d
+    return {l["nombre"]: l["id"] for l in d["resultado"]["leads"]}
+
+
+def _esperar_lote(cliente, job_id):
+    for _ in range(100):
+        d = cliente.get(f"/api/redes/lote/{job_id}").get_json()
+        if d["estado"] != "ejecutando":
+            return d
+        time.sleep(0.1)
+    raise AssertionError("el lote no terminó")
+
+
+def test_lote_respeta_el_tope_de_creditos_y_el_orden_por_puntuacion(cliente, monkeypatch):
+    ids = _sembrar_leads_para_lote(cliente, monkeypatch, "Tunja", ["Dental Uno", "Dental Dos", "Dental Tres", "Dental Cuatro"])
+    import db
+    from sqlalchemy import update as _upd
+    with db.engine.begin() as conn:  # aísla el test: solo estos 4 leads son candidatos
+        conn.execute(_upd(db.leads).where(~db.leads.c.id.in_(list(ids.values()))).values(estado="descartado"))
+    consultados = []
+
+    def falso(nombre, ciudad, cache=None):
+        consultados.append(nombre)
+        con_datos = nombre == "Dental Uno"
+        return {"perfiles": [{"url": "https://www.instagram.com/dentaluno/", "red": "instagram", "titulo": "t", "snippet": "s"}] if con_datos else [],
+                "emails": [{"valor": "hola@dentaluno.co", "fuente": "https://www.instagram.com/dentaluno/", "via": "v"}] if con_datos else [],
+                "whatsapps": [], "telefonos": [], "creditos": 1}
+
+    monkeypatch.setattr(redes, "buscar_perfiles", falso)
+    # sin CSRF / sin tope / tope inválido
+    assert cliente.post("/api/redes/lote", json={"max_creditos": 2}).status_code == 403
+    assert cliente.post("/api/redes/lote", headers=H, json={}).status_code == 400
+    assert cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 0}).status_code == 400
+
+    cand = cliente.get("/api/redes/lote/candidatos").get_json()
+    assert cand["candidatos"] >= 4
+    r = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 2})
+    assert r.status_code == 202
+    d = _esperar_lote(cliente, r.get_json()["job_id"])
+    assert d["estado"] == "listo", d
+    res = d["resultado"]
+    assert res["creditos_usados"] == 2 and res["procesados"] == 2  # se detuvo en el tope
+    assert res["con_email"] == 1 and res["sin_datos"] == 1 and res["detenido_por_tope"] is True
+    assert consultados[0] == "Dental Uno"  # el de mayor puntuación primero
+    lead = cliente.get(f"/api/leads/{ids['Dental Uno']}").get_json()
+    assert lead["email"] == "hola@dentaluno.co" and lead["diagnostico"]["redes"]["creditos"] == 1
+    assert "Dental Cuatro" not in consultados
+
+    # los ya consultados no se repiten en el siguiente lote
+    consultados.clear()
+    r2 = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 50})
+    d2 = _esperar_lote(cliente, r2.get_json()["job_id"])
+    assert "Dental Uno" not in consultados and "Dental Dos" not in consultados
+    assert d2["resultado"]["detenido_por_tope"] is False
+
+
+def test_lote_las_consultas_en_cache_no_gastan_credito(cliente, monkeypatch):
+    _sembrar_leads_para_lote(cliente, monkeypatch, "Duitama", ["Ortodoncia Sol", "Ortodoncia Luna"])
+    monkeypatch.setattr(redes, "buscar_perfiles", lambda n, c, cache=None: {
+        "perfiles": [], "emails": [], "whatsapps": [], "telefonos": [], "creditos": 0})
+    r = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 1})
+    d = _esperar_lote(cliente, r.get_json()["job_id"])
+    assert d["estado"] == "listo" and d["resultado"]["creditos_usados"] == 0
+    assert d["resultado"]["procesados"] >= 2  # con caché pasa de largo el tope de 1 crédito
+
+
+def test_lote_se_detiene_tras_errores_seguidos_y_sin_clave(cliente, monkeypatch):
+    _sembrar_leads_para_lote(cliente, monkeypatch, "Sogamoso", ["Consultorio A", "Consultorio B", "Consultorio C", "Consultorio D"])
+
+    def falla(n, c, cache=None):
+        raise redes.RedesError("Error de conexión con SerpAPI: timeout")
+
+    monkeypatch.setattr(redes, "buscar_perfiles", falla)
+    r = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 10})
+    d = _esperar_lote(cliente, r.get_json()["job_id"])
+    assert d["estado"] == "error" and "3 errores seguidos" in d["error"]
+
+    monkeypatch.setenv("SERPAPI_KEY", "tu_api_key_aqui")
+    assert cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 5}).status_code == 400
+    monkeypatch.setenv("SERPAPI_KEY", "clave-falsa")
+
+
+def test_lote_sin_candidatos(cliente, monkeypatch):
+    monkeypatch.setattr(redes, "buscar_perfiles", lambda n, c, cache=None: {
+        "perfiles": [], "emails": [], "whatsapps": [], "telefonos": [], "creditos": 0})
+    for _ in range(3):  # vacía la cola de candidatos
+        r = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 50})
+        if r.status_code != 202:
+            break
+        _esperar_lote(cliente, r.get_json()["job_id"])
+    r = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 5})
+    assert r.status_code == 400 and "No hay leads" in r.get_json()["error"]
+    assert cliente.get("/api/redes/lote/noexiste").status_code == 404

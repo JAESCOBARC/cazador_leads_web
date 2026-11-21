@@ -31,6 +31,12 @@ La app web escanea una ciudad por sectores y detecta qué le falta a cada negoci
 
 **Contactos:** Google Maps (SerpAPI) solo da teléfono y web; nunca email. El email y el WhatsApp se leen de la web del propio negocio (portada y, si falta alguno, contacto / aviso legal / privacidad), solo si están publicados: `mailto:`, texto visible, emails ofuscados, protección de Cloudflare, datos estructurados y enlaces `wa.me`. Nunca se adivinan (`info@dominio`). Canal recomendado: WhatsApp publicado > email real > teléfono (WhatsApp sin confirmar). Cada dato guarda su fuente. **Instagram y Facebook** (`redes.py`): una petición automática a un perfil no devuelve email, teléfono ni WhatsApp (Instagram solo entrega JavaScript; Facebook, un fragmento de la bio). Hay tres vías: (1) el radar lee gratis la bio pública del perfil que el negocio enlazó en Maps; (2) en el modal del lead, el botón «Buscar en Instagram/Facebook» consulta Google (1 crédito, con caché) y recoge lo que la bio publica, también para negocios sin web; (3) botón «Perfil» para verificar a mano. Solo perfiles públicos, sin iniciar sesión, sin rastrear seguidores; se filtran homónimos por nombre y siempre hay que confirmar que el perfil es del negocio.
 
+**Sin IA:** nada de la app usa modelos de IA (ni Claude ni otros): los mensajes son plantillas con datos reales, y la detección y la puntuación son reglas. El único coste son los créditos de SerpAPI.
+
+**Lote de redes** (Mis leads → «Buscar redes en lote»): consulta Instagram/Facebook vía Google de los leads *nuevos sin email*, de mayor a menor puntuación, con prioridad y tope de créditos elegidos por ti (máximo `LOTE_MAX_CREDITOS`). Las consultas en caché no cuestan; se detiene al llegar al tope o tras 3 errores seguidos. Los datos se guardan con su fuente y hay que verificarlos antes de enviar.
+
+**Mapa 3D** (MapLibre + OpenFreeMap, sin clave): inclinado y con órbita durante el escaneo, flechas ◀ ▶ ▲ ▼ para girar e inclinar, pines en forma de flecha con la puntuación y columnas de altura proporcional al score (rosa = alta, ámbar = media, azul pizarra = baja).
+
 Cada lead recibe un score (demanda en Maps + oportunidades + alcanzabilidad + ticket del sector) y prioridad alta/media/baja.
 El ticket por sector es una estimación orientativa. El mini-caso solo aparece si defines `CASO_EXITO` (un caso real).
 Seguimiento: mensaje inicial → +3 días → +4 días → cierre. Cada plantilla (ángulo:canal:variante A/B) se mide en Analítica.
