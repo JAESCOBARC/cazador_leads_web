@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cazador Leads Web</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23172B45'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
@@ -28,6 +29,8 @@
         <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
         <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
         <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+        <symbol id="i-radar" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></symbol>
+        <symbol id="i-phone-call" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
         <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></symbol>
     </svg>
 
@@ -37,8 +40,8 @@
             Cazador Leads
         </div>
         <button type="button" class="nav-item" data-vista="buscar" aria-current="page">
-            <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
-            <span class="corto">Buscar</span><span class="largo">Buscar prospects</span>
+            <svg class="icono" aria-hidden="true"><use href="#i-radar"/></svg>
+            <span class="corto">Radar</span><span class="largo">Radar de oportunidades</span>
         </button>
         <button type="button" class="nav-item" data-vista="leads">
             <svg class="icono" aria-hidden="true"><use href="#i-list"/></svg>
@@ -62,59 +65,88 @@
     </nav>
 
     <main class="main">
-        <!-- ============ BUSCAR ============ -->
+        <!-- ============ RADAR ============ -->
         <section class="vista active" id="vista-buscar" aria-labelledby="h-buscar">
             <header class="pagina-cab">
-                <h1 id="h-buscar">Cazador Leads Web</h1>
-                <p>Encuentra negocios sin página web y genera emails personalizados</p>
+                <h1 id="h-buscar">Radar de oportunidades</h1>
+                <p>Escanea una ciudad y descubre qué le falta a cada negocio: web, medición para anuncios, SEO local o gestión</p>
             </header>
 
-            <div class="card">
-                <h2 class="card-titulo">
-                    <svg class="icono" aria-hidden="true"><use href="#i-search"/></svg>
-                    Nueva búsqueda
-                </h2>
+            <div class="radar-panel">
+                <h2><svg class="icono" aria-hidden="true"><use href="#i-radar"/></svg> El Radar · <span class="acento">escanea tu ciudad</span></h2>
+                <p class="radar-sub">Detecta negocios sin web, con web débil o sin medición, y te muestra cómo contactarlos.</p>
 
-                <div class="aviso error" id="error" role="alert"></div>
-
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="nicho">Nicho de negocio</label>
-                        <input type="text" id="nicho" placeholder="Ej: pizzeria, odontologos, salones de belleza" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="ciudad">Ciudad</label>
-                        <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="pais">País</label>
-                        <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" required>
-                    </div>
+                <div class="radar-mapa-wrap" id="radarMapa">
+                    <div id="mapa"></div>
+                    <div class="radar-sweep" aria-hidden="true"></div>
+                    <div class="radar-hint" id="radarHint">Escribe tu ciudad y la escaneamos</div>
                 </div>
 
-                <div class="button-group">
-                    <button class="btn btn-search" id="searchBtn" onclick="buscar()">
-                        <svg class="icono sm" aria-hidden="true"><use href="#i-search"/></svg>
-                        <span>Buscar prospects</span>
-                    </button>
-                    <button class="btn btn-clear" onclick="limpiar()">
-                        <svg class="icono sm" aria-hidden="true"><use href="#i-trash"/></svg>
-                        <span>Limpiar</span>
-                    </button>
-                </div>
+                <div class="aviso error" id="error" role="alert" style="margin-top:12px"></div>
 
-                <div class="loading" id="loading" role="status">
-                    <div class="spinner" aria-hidden="true"></div>
-                    <p>Buscando prospects…</p>
+                <div class="radar-form">
+                    <div class="radar-fila">
+                        <div>
+                            <label for="ciudad">Ciudad o barrio</label>
+                            <input type="text" id="ciudad" placeholder="Ej: Dosquebradas, Bogotá, Lima" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="pais">País</label>
+                            <input type="text" id="pais" placeholder="Ej: Colombia, Perú, Argentina" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label>Sectores a escanear (hasta 4)</label>
+                        <div class="chips" id="chipsSector"></div>
+                        <div style="display:flex;gap:8px;margin-top:8px">
+                            <input type="text" id="otroSector" placeholder="Otro sector (ej: ferreterías)" maxlength="60">
+                            <button type="button" class="btn btn-clear btn-sm" id="otroBtn">Añadir</button>
+                        </div>
+                        <p class="radar-ayuda" style="margin-top:6px">El ticket es una estimación orientativa de lo que el sector suele poder invertir.</p>
+                    </div>
+
+                    <div class="radar-fila">
+                        <div>
+                            <label for="cobertura">Cobertura</label>
+                            <select id="cobertura">
+                                <option value="rapida">Rápida · centro de la ciudad</option>
+                                <option value="normal" selected>Normal · centro, más resultados</option>
+                                <option value="profunda">Profunda · centro + 4 barrios</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;align-items:flex-end">
+                            <label class="check-osc" style="margin:0 0 10px">
+                                <input type="checkbox" id="analizarWebs" checked>
+                                Analizar las webs existentes (medición, móvil, SEO)
+                            </label>
+                        </div>
+                    </div>
+                    <p class="radar-ayuda" id="credEstim"></p>
+
+                    <div class="button-group" style="margin-top:0">
+                        <button class="btn btn-lima" id="searchBtn" onclick="escanear()">
+                            <svg class="icono sm" aria-hidden="true"><use href="#i-radar"/></svg>
+                            <span>Escanear</span>
+                        </button>
+                        <button class="btn btn-clear" onclick="limpiar()">
+                            <svg class="icono sm" aria-hidden="true"><use href="#i-trash"/></svg>
+                            <span>Limpiar</span>
+                        </button>
+                    </div>
+                    <div class="radar-prog" id="radarProg" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="radarBarra"></div></div>
+                    <div class="radar-etapa" id="radarEtapa" role="status"></div>
                 </div>
             </div>
 
             <section class="results-section" id="results" aria-labelledby="tituloResultados">
                 <div class="aviso warning" id="warning" role="status"></div>
-                <div class="results-header">
-                    <h2 id="tituloResultados">Resultados</h2>
-                    <span class="badge badge-azul results-count"><span id="totalLeads">0</span>&nbsp;leads encontrados</span>
+                <div class="kpis" id="radarKpis"></div>
+                <div class="radar-cab">
+                    <h2 class="seccion-titulo" id="tituloResultados" style="margin:0">Oportunidades detectadas</h2>
                 </div>
+                <div class="chips filtros-chips" id="catChips" aria-label="Filtrar por sector"></div>
+                <div class="chips filtros-chips" id="oppChips" aria-label="Filtrar por oportunidad"></div>
                 <div class="leads-list" id="leadsList"></div>
             </section>
         </section>
@@ -138,6 +170,16 @@
                 <div>
                     <label for="fAsignado" style="position:absolute;left:-9999px">Asignado a</label>
                     <select id="fAsignado"></select>
+                </div>
+            </div>
+            <div class="filtros">
+                <div>
+                    <label for="fPrioridad" style="position:absolute;left:-9999px">Prioridad</label>
+                    <select id="fPrioridad"></select>
+                </div>
+                <div>
+                    <label for="fOpp" style="position:absolute;left:-9999px">Oportunidad</label>
+                    <select id="fOpp"></select>
                 </div>
             </div>
             <div class="filtros-acciones">
@@ -226,11 +268,30 @@
         <div class="dlg-cuerpo">
             <div class="aviso error" id="dlgError" role="alert"></div>
             <div id="dlgInfo"></div>
+            <div id="dlgDiag"></div>
 
             <details class="msg-box" id="dlgMsg">
                 <summary>Mensaje sugerido</summary>
+                <div class="msg-controles">
+                    <div><label for="mAngulo">Ángulo</label><select id="mAngulo"></select></div>
+                    <div><label for="mCanal">Canal</label>
+                        <select id="mCanal">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="telefono">Llamada (guion)</option>
+                        </select></div>
+                    <div><label for="mPaso">Paso</label>
+                        <select id="mPaso">
+                            <option value="0">Mensaje inicial</option>
+                            <option value="1">Seguimiento (día 3)</option>
+                            <option value="2">Cierre (día 7)</option>
+                        </select></div>
+                    <div><label for="mVariante">Variante</label>
+                        <select id="mVariante"><option value="a">A</option><option value="b">B</option></select></div>
+                </div>
                 <div class="email-subject" id="dlgAsunto" hidden></div>
                 <div class="email-body" id="dlgCuerpo"></div>
+                <div class="msg-meta" id="dlgMsgMeta"></div>
                 <div class="msg-acciones">
                     <button type="button" class="btn btn-clear btn-sm" id="dlgCopiar">
                         <svg class="icono sm" aria-hidden="true"><use href="#i-copy"/></svg>
@@ -240,6 +301,10 @@
                         <svg class="icono sm" aria-hidden="true"><use href="#i-message"/></svg>
                         <span>Abrir WhatsApp</span>
                     </a>
+                    <button type="button" class="btn btn-primario btn-sm" id="dlgEnviado">
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-check"/></svg>
+                        <span>Registrar envío</span>
+                    </button>
                 </div>
             </details>
 
@@ -315,6 +380,7 @@
         </div>
     </dialog>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
     <script>
     // ------------------------------------------------------------ utilidades
     const ESTADOS = {
@@ -365,7 +431,7 @@
         if (!r.ok) throw new Error(data.error || 'Error de servidor');
         return data;
     }
-    const json = (metodo, cuerpo) => ({ method: metodo, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+    const json = (metodo, cuerpo) => ({ method: metodo, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' }, body: JSON.stringify(cuerpo) });
 
     function vacio(titulo, texto) {
         return `<div class="card vacio">${icono('inbox', '')}<strong>${escapeHtml(titulo)}</strong>${escapeHtml(texto)}</div>`;
@@ -381,6 +447,7 @@
         });
         if (location.hash !== '#' + vista) history.replaceState(null, '', '#' + vista);
         window.scrollTo(0, 0);
+        if (vista === 'buscar') setTimeout(() => { iniciarMapa(); if (mapa) mapa.invalidateSize(); }, 60);
         if (vista === 'leads') cargarLeads();
         if (vista === 'analitica') cargarAnalitica();
         if (vista === 'usuarios') cargarUsuarios();
@@ -393,6 +460,7 @@
         $('yoRol').textContent = YO.rol === 'admin' ? 'Administrador' : 'Usuario';
         $('navUsuarios').hidden = YO.rol !== 'admin';
         await refrescarUsuarios();
+        try { await cargarSectores(); } catch (e) { aviso($('error'), 'error', e.message); }
         irA(location.hash.slice(1) || 'buscar');
     }
 
@@ -400,154 +468,305 @@
         USUARIOS = (await api('/api/usuarios')).usuarios;
     }
 
-    // ------------------------------------------------------------ BUSCAR
-    async function buscar() {
-        const nicho = $('nicho').value.trim();
-        const ciudad = $('ciudad').value.trim();
-        const pais = $('pais').value.trim();
-        const errorDiv = $('error');
-        const btn = $('searchBtn');
+    // ------------------------------------------------------------ RADAR
+    const OPP = {
+        sin_web:       { txt: 'Sin web',            cls: 'opp-rojo' },
+        web_mala:      { txt: 'Web débil',          cls: 'opp-naranja' },
+        sin_medicion:  { txt: 'Sin medición Ads',   cls: 'opp-morado' },
+        sin_captacion: { txt: 'No capta contactos', cls: 'opp-naranja' },
+        seo_local:     { txt: 'SEO local',          cls: 'opp-azul' },
+        reputacion:    { txt: 'Reputación',         cls: 'opp-amarillo' },
+        gestion:       { txt: 'App de gestión',     cls: 'opp-gris' }
+    };
+    const TICKET = { alto: 'High ticket', medio: 'Medium ticket', bajo: 'Low ticket' };
+    const PRIO = { alta: '🔥 Alta', media: 'Media', baja: 'Baja' };
+    const COLOR_PRIO = { alta: '#B8F04A', media: '#F59E0B', baja: '#94A3B8' };
+    let SECTORES = [], COBERTURAS = {}, SEL = new Set();
+    let RADAR = { leads: [], sectores: [], sector: '', opp: '' };
+    let mapa = null, capaPuntos = null, marcadores = {}, timerRadar = null;
 
-        if (!nicho || !ciudad || !pais) {
-            aviso(errorDiv, 'error', 'Por favor completa todos los campos');
+    function tagOpp(o) {
+        const d = OPP[o.tipo] || { txt: o.titulo, cls: 'opp-gris' };
+        return `<span class="opp ${d.cls}${o.verificado ? '' : ' sinverif'}" title="${o.verificado ? 'Verificado con datos reales' : 'Por confirmar'}">${escapeHtml(d.txt)}${o.verificado ? '' : ' ?'}</span>`;
+    }
+    function estrellas(l) {
+        if (!l.rating && !l.resenas) return '';
+        return `<span class="estrellas">★ ${l.rating ? String(l.rating).replace('.', ',') : '—'}${l.resenas != null ? ` (${l.resenas})` : ''}</span>`;
+    }
+
+    async function cargarSectores() {
+        const d = await api('/api/sectores');
+        SECTORES = d.sectores.slice();
+        COBERTURAS = d.coberturas;
+        pintarSectores();
+        actualizarCreditos();
+    }
+    function pintarSectores() {
+        $('chipsSector').innerHTML = SECTORES.map(s =>
+            `<button type="button" class="chip" aria-pressed="${SEL.has(s.nombre)}" data-sector="${escapeHtml(s.nombre)}">
+                ${escapeHtml(s.nombre)} <span class="tk tk-${s.ticket}">${s.ticket}</span></button>`).join('');
+        $('chipsSector').querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+            const n = b.dataset.sector;
+            if (SEL.has(n)) SEL.delete(n);
+            else if (SEL.size >= 4) { aviso($('error'), 'error', 'Puedes escanear hasta 4 sectores a la vez'); return; }
+            else SEL.add(n);
+            ocultar($('error'));
+            pintarSectores(); actualizarCreditos();
+        }));
+    }
+    function anadirSector() {
+        const n = $('otroSector').value.trim();
+        if (!n) return;
+        if (!SECTORES.some(s => s.nombre.toLowerCase() === n.toLowerCase())) SECTORES.push({ nombre: n, ticket: 'medio' });
+        const real = SECTORES.find(s => s.nombre.toLowerCase() === n.toLowerCase()).nombre;
+        if (SEL.size < 4) SEL.add(real);
+        $('otroSector').value = '';
+        pintarSectores(); actualizarCreditos();
+    }
+    $('otroBtn').addEventListener('click', anadirSector);
+    $('otroSector').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); anadirSector(); } });
+    $('cobertura').addEventListener('change', actualizarCreditos);
+
+    function actualizarCreditos() {
+        const c = COBERTURAS[$('cobertura').value];
+        if (!c) return;
+        const n = SEL.size;
+        $('credEstim').textContent = n
+            ? `Consumirá hasta ${n * c.creditos_por_sector} créditos de SerpAPI (las búsquedas repetidas usan la caché y no gastan).`
+            : 'Elige al menos un sector. Cada sector consume ' + c.creditos_por_sector + ' crédito(s) de SerpAPI.';
+    }
+
+    function iniciarMapa() {
+        if (mapa || !window.L) return;
+        mapa = L.map('mapa', { zoomControl: true }).setView([4.6, -74.1], 5);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(mapa);
+        capaPuntos = L.layerGroup().addTo(mapa);
+    }
+    function dibujarMapa(leads, centro) {
+        iniciarMapa();
+        if (!mapa) return;
+        capaPuntos.clearLayers();
+        marcadores = {};
+        const pts = [];
+        leads.forEach(l => {
+            if (l.lat == null || l.lon == null) return;
+            const m = L.circleMarker([l.lat, l.lon], {
+                radius: l.prioridad === 'alta' ? 9 : 7, color: '#0B1220', weight: 1.5,
+                fillColor: COLOR_PRIO[l.prioridad] || '#94A3B8', fillOpacity: .95
+            }).addTo(capaPuntos);
+            m.bindTooltip(`${l.nombre} · ${l.score}`);
+            m.on('click', () => irATarjeta(l.id));
+            marcadores[l.id] = m;
+            pts.push([l.lat, l.lon]);
+        });
+        mapa.invalidateSize();
+        if (pts.length) mapa.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
+        else if (centro) mapa.setView([centro.lat, centro.lon], 12);
+        $('radarHint').style.display = 'none';
+    }
+
+    async function escanear() {
+        const ciudad = $('ciudad').value.trim(), pais = $('pais').value.trim();
+        const errorDiv = $('error'), btn = $('searchBtn');
+        if (!ciudad || !pais || !SEL.size) {
+            aviso(errorDiv, 'error', 'Completa ciudad, país y elige al menos un sector');
             return;
         }
-
         ocultar(errorDiv);
-        $('loading').classList.add('active');
         $('results').classList.remove('active');
-        btn.disabled = true;
-        btn.classList.add('cargando');
-        btn.setAttribute('aria-busy', 'true');
-
+        $('radarMapa').classList.add('escaneando');
+        $('radarProg').classList.add('active');
+        $('radarBarra').style.width = '3%';
+        $('radarEtapa').textContent = 'Lanzando el radar…';
+        btn.disabled = true; btn.classList.add('cargando'); btn.setAttribute('aria-busy', 'true');
+        iniciarMapa();
         try {
-            const data = await api('/api/buscar', json('POST', { nicho, ciudad, pais }));
-            mostrarResultados(data);
-        } catch (error) {
-            aviso(errorDiv, 'error', error.message);
+            const { job_id } = await api('/api/radar', json('POST', {
+                ciudad, pais, sectores: [...SEL], cobertura: $('cobertura').value,
+                analizar_webs: $('analizarWebs').checked
+            }));
+            await sondear(job_id);
+        } catch (e) {
+            aviso(errorDiv, 'error', e.message);
+            $('radarEtapa').textContent = '';
         } finally {
-            $('loading').classList.remove('active');
-            btn.disabled = false;
-            btn.classList.remove('cargando');
-            btn.removeAttribute('aria-busy');
+            clearInterval(timerRadar);
+            $('radarMapa').classList.remove('escaneando');
+            $('radarProg').classList.remove('active');
+            btn.disabled = false; btn.classList.remove('cargando'); btn.removeAttribute('aria-busy');
         }
     }
 
-    function mostrarResultados(data) {
-        const leadsList = $('leadsList');
-        const warningDiv = $('warning');
-        $('totalLeads').textContent = data.total;
-        leadsList.innerHTML = '';
-
-        if (data.advertencia) {
-            warningDiv.innerHTML = icono('alert', 'sm') + '<span></span>';
-            warningDiv.lastElementChild.textContent = data.advertencia;
-            warningDiv.classList.add('active');
-        } else {
-            ocultar(warningDiv);
-        }
-
-        if (!data.leads || data.leads.length === 0) {
-            leadsList.innerHTML = vacio('Sin resultados', 'No encontramos negocios sin web para esta búsqueda. Prueba con otro nicho o ciudad.');
-            $('results').classList.add('active');
-            return;
-        }
-
-        const canalInfo = {
-            whatsapp: 'Ver mensaje para WhatsApp',
-            email: 'Ver email personalizado',
-            telefono: 'Ver mensaje (verificar canal manualmente)'
-        };
-
-        data.leads.forEach(lead => {
-            const card = document.createElement('div');
-            card.className = 'lead-card';
-
-            let badge;
-            if (lead.canal_recomendado === 'whatsapp') {
-                badge = lead.whatsapp_confirmado
-                    ? `<span class="badge badge-exito">${icono('message')} WhatsApp (publicado por el negocio)</span>`
-                    : `<span class="badge badge-aviso">${icono('message')} WhatsApp (generado desde el teléfono — verificar)</span>`;
-            } else if (lead.canal_recomendado === 'email') {
-                badge = `<span class="badge badge-azul">${icono('mail')} Email</span>`;
-            } else {
-                badge = `<span class="badge badge-neutro">${icono('phone')} Solo teléfono</span>`;
-            }
-            const repetido = lead.repetido
-                ? ` <span class="badge badge-aviso">Ya estaba guardado</span>` : '';
-
-            let contactoDirectoHtml = '';
-            if (/^https:\/\//i.test(lead.whatsapp || '')) {
-                contactoDirectoHtml += `<div class="info-item ancho">
-                    <span class="info-label">WhatsApp</span>
-                    <span class="info-value"><a href="${escapeHtml(lead.whatsapp)}" target="_blank" rel="noopener">${escapeHtml(lead.whatsapp)}</a></span>
-                </div>`;
-            }
-            if (lead.redes_sociales) {
-                contactoDirectoHtml += `<div class="info-item ancho">
-                    <span class="info-label">Red social</span>
-                    <span class="info-value">${escapeHtml(lead.redes_sociales)}</span>
-                </div>`;
-            }
-
-            const asuntoHtml = lead.asunto
-                ? `<div class="email-subject"><strong>Asunto:</strong> ${escapeHtml(lead.asunto)}</div>` : '';
-
-            card.innerHTML = `
-                <div class="lead-header">
-                    <div class="lead-number">${escapeHtml(lead.numero)}</div>
-                    <div class="lead-title">
-                        <h3>${escapeHtml(lead.nombre)}</h3>
-                        ${badge}${repetido} ${badgeEstado(lead.estado)}
-                    </div>
-                </div>
-                <div class="lead-info">
-                    <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(lead.telefono)}</span></div>
-                    <div class="info-item"><span class="info-label">Email</span><span class="info-value">${escapeHtml(lead.email)}</span></div>
-                    ${contactoDirectoHtml}
-                    <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(lead.direccion)}</span></div>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button class="expand-btn" aria-expanded="false" onclick="toggleEmail(this)">
-                        <span class="expand-label">${canalInfo[lead.canal_recomendado] || canalInfo.telefono}</span>
-                        ${icono('chevron', 'sm chev')}
-                    </button>
-                    <button class="btn btn-primario btn-sm" onclick="abrirLead(${Number(lead.id)}, true)">
-                        ${icono('check')} <span>Marcar contactado</span>
-                    </button>
-                </div>
-                <div class="email-section">
-                    ${asuntoHtml}
-                    <div class="email-body">${escapeHtml(lead.cuerpo)}</div>
-                </div>`;
-            leadsList.appendChild(card);
+    function sondear(jobId) {
+        return new Promise((resolve, reject) => {
+            clearInterval(timerRadar);
+            timerRadar = setInterval(async () => {
+                try {
+                    const d = await api('/api/radar/' + jobId);
+                    $('radarBarra').style.width = d.progreso + '%';
+                    $('radarProg').setAttribute('aria-valuenow', d.progreso);
+                    $('radarEtapa').textContent = d.etapa;
+                    if (d.estado === 'listo') { clearInterval(timerRadar); mostrarRadar(d.resultado); resolve(); }
+                    else if (d.estado === 'error') { clearInterval(timerRadar); reject(new Error(d.error || 'Error en el radar')); }
+                } catch (e) { clearInterval(timerRadar); reject(e); }
+            }, 1000);
         });
+    }
+
+    function mostrarRadar(res) {
+        RADAR = { leads: res.leads || [], sectores: res.sectores || [], sector: '', opp: '' };
+        const altas = RADAR.leads.filter(l => l.prioridad === 'alta').length;
+        $('radarKpis').innerHTML = `
+            <div class="kpi"><div class="kpi-label">Negocios escaneados</div><div class="kpi-valor">${res.total_negocios}</div></div>
+            <div class="kpi"><div class="kpi-label">Con oportunidad</div><div class="kpi-valor">${RADAR.leads.length}</div></div>
+            <div class="kpi"><div class="kpi-label">Prioridad alta</div><div class="kpi-valor">${altas}</div></div>
+            <div class="kpi"><div class="kpi-label">Leads nuevos</div><div class="kpi-valor">${res.nuevos}</div><div class="kpi-nota">${RADAR.leads.length - res.nuevos} ya estaban guardados</div></div>
+            <div class="kpi"><div class="kpi-label">Créditos usados</div><div class="kpi-valor">${res.creditos_usados}</div></div>`;
+        const w = $('warning');
+        if (res.advertencias && res.advertencias.length) {
+            w.innerHTML = icono('alert', 'sm') + '<span></span>';
+            w.lastElementChild.textContent = res.advertencias.join(' · ');
+            w.classList.add('active');
+        } else ocultar(w);
+        pintarFiltrosRadar();
+        pintarResultados();
+        dibujarMapa(RADAR.leads, res.centro);
         $('results').classList.add('active');
     }
 
-    function toggleEmail(btn) {
-        const emailSection = btn.parentElement.nextElementSibling;
-        const label = btn.querySelector('.expand-label');
-        if (!btn.dataset.originalText) btn.dataset.originalText = label.textContent;
-        emailSection.classList.toggle('active');
-        const abierto = emailSection.classList.contains('active');
-        btn.setAttribute('aria-expanded', abierto);
-        label.textContent = abierto ? 'Ocultar' : btn.dataset.originalText;
+    function pintarFiltrosRadar() {
+        const base = RADAR.leads;
+        const chipC = (clave, txt, n, activo, extra) =>
+            `<button type="button" class="chip chip-claro${activo ? ' activo' : ''}" data-clave="${escapeHtml(clave)}">${escapeHtml(txt)} <span class="n">${n}</span>${extra || ''}</button>`;
+        $('catChips').innerHTML = chipC('', 'Todos', base.length, !RADAR.sector) +
+            RADAR.sectores.map(s => chipC(s.nicho, s.nicho, base.filter(l => l.nicho === s.nicho).length,
+                RADAR.sector === s.nicho, ` <span class="tk tk-${s.ticket}">${TICKET[s.ticket]}</span>`)).join('');
+        $('catChips').querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+            RADAR.sector = b.dataset.clave; RADAR.opp = '';
+            pintarFiltrosRadar(); pintarResultados();
+        }));
+        const delSector = base.filter(l => !RADAR.sector || l.nicho === RADAR.sector);
+        const cuenta = {};
+        delSector.forEach(l => l.oportunidades.forEach(o => cuenta[o.tipo] = (cuenta[o.tipo] || 0) + 1));
+        $('oppChips').innerHTML = chipC('', 'Cualquier oportunidad', delSector.length, !RADAR.opp) +
+            Object.keys(OPP).filter(t => cuenta[t]).map(t => chipC(t, OPP[t].txt, cuenta[t], RADAR.opp === t)).join('');
+        $('oppChips').querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+            RADAR.opp = b.dataset.clave;
+            pintarFiltrosRadar(); pintarResultados();
+        }));
+    }
+
+    function pintarResultados() {
+        const lista = RADAR.leads.filter(l => (!RADAR.sector || l.nicho === RADAR.sector) &&
+            (!RADAR.opp || l.oportunidades.some(o => o.tipo === RADAR.opp)));
+        const cont = $('leadsList');
+        if (!lista.length) {
+            cont.innerHTML = vacio('Sin oportunidades', RADAR.leads.length
+                ? 'Ningún negocio coincide con ese filtro.'
+                : 'No encontramos negocios con oportunidades para esta búsqueda. Prueba otro sector o una cobertura mayor.');
+            return;
+        }
+        cont.innerHTML = lista.map(tarjetaLead).join('');
+        cont.querySelectorAll('[data-det]').forEach(b => b.addEventListener('click', () => {
+            const det = $('det-' + b.dataset.det);
+            det.classList.toggle('active');
+            b.setAttribute('aria-expanded', det.classList.contains('active'));
+        }));
+    }
+
+    function tarjetaLead(l) {
+        const wa = /^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(l.whatsapp || '') ? l.whatsapp : '';
+        const tel = (l.telefono || '').replace(/[^\d+]/g, '');
+        return `<div class="lead-card" id="lead-${l.id}">
+            <div class="lead-header">
+                <div class="lead-number" title="Puntuación de prioridad">${l.score}</div>
+                <div class="lead-title">
+                    <h3>${escapeHtml(l.nombre)}</h3>
+                    <span class="prio prio-${escapeHtml(l.prioridad)}">${PRIO[l.prioridad] || ''}</span>
+                    ${estrellas(l)} ${l.ticket ? `<span class="badge badge-neutro">${TICKET[l.ticket]}</span>` : ''} ${badgeEstado(l.estado)}
+                </div>
+            </div>
+            <div class="opps">${l.oportunidades.map(tagOpp).join('')}</div>
+            <div class="lead-info">
+                <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(l.telefono) || '—'}</span></div>
+                <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(l.direccion) || '—'}</span></div>
+            </div>
+            <div class="lead-acciones">
+                ${tel ? `<a class="btn btn-clear btn-sm" href="tel:${escapeHtml(tel)}" style="text-decoration:none">${icono('phone')} <span>Llamar</span></a>` : ''}
+                ${wa ? `<a class="btn btn-clear btn-sm" href="${escapeHtml(wa)}" target="_blank" rel="noopener" style="text-decoration:none">${icono('message')} <span>WhatsApp</span></a>` : ''}
+                <button class="expand-btn" aria-expanded="false" data-det="${l.id}"><span class="expand-label">Ver análisis</span>${icono('chevron', 'sm chev')}</button>
+                <button class="btn btn-primario btn-sm" onclick="abrirLead(${Number(l.id)}, true)">${icono('check')} <span>Contactar</span></button>
+            </div>
+            <div class="detalle" id="det-${l.id}">${detalleHtml(l)}</div>
+        </div>`;
+    }
+
+    function detalleHtml(l) {
+        const opps = l.oportunidades.map(o => `<div class="opp-item"><strong>${escapeHtml(o.titulo)}${o.verificado ? '' : ' <span class="muted">(por confirmar)</span>'}</strong>
+            ${escapeHtml(o.detalle)}<span class="serv">Servicio: ${escapeHtml(o.servicio)}</span></div>`).join('');
+        const msg = l.cuerpo ? `<h3 style="font-size:.9rem;margin:12px 0 4px">Mensaje sugerido</h3>
+            ${l.asunto ? `<div class="email-subject"><strong>Asunto:</strong> ${escapeHtml(l.asunto)}</div>` : ''}
+            <div class="email-body">${escapeHtml(l.cuerpo)}</div>` : '';
+        return `<div class="opp-lista">${opps}</div>
+            <h3 style="font-size:.9rem">Lo que encontramos</h3>${checklistHtml(l)}${msg}`;
+    }
+
+    function checklistHtml(l) {
+        const d = l.diagnostico || {}, e = d.escaneo, m = d.medicion || {};
+        const li = (ok, t) => `<li class="${ok === null ? 'dg-nd' : ok ? 'dg-ok' : 'dg-no'}" data-s="${ok === null ? '?' : ok ? '✓' : '✗'}">${escapeHtml(t)}</li>`;
+        const it = [];
+        const clase = { red: 'Solo tiene redes sociales', whatsapp: 'Solo publica un enlace de WhatsApp', directorio: 'Solo aparece en un directorio' }[d.clase_web] || 'Sin página web propia';
+        if (!l.tiene_web) it.push(li(false, clase));
+        else if (!e) it.push(li(null, 'Web no analizada'));
+        else if (e.estado !== 'ok') it.push(li(null, 'No se pudo leer la web: ' + (e.detalle || e.estado)));
+        else {
+            it.push(li(!!e.https, 'HTTPS seguro'));
+            it.push(li(!!e.viewport, 'Adaptada a móvil'));
+            if (e.tiempo_ms != null) it.push(li(e.tiempo_ms <= 4000, `Respuesta en ${(e.tiempo_ms / 1000).toFixed(1)} s`));
+            if (e.solo_js) it.push(li(null, 'La web se pinta con JavaScript: no se puede verificar la medición'));
+            else {
+                it.push(li(!!m.meta_pixel, 'Píxel de Meta'));
+                it.push(li(!!m.ga4, 'Google Analytics 4'));
+                it.push(li(!!m.gtm, 'Google Tag Manager'));
+                it.push(li(!!m.google_ads, 'Etiqueta de Google Ads'));
+            }
+            it.push(li(!!e.tiene_form_o_whatsapp, 'Formulario, teléfono o WhatsApp visibles'));
+            it.push(li(!!e.schema_local, 'Datos estructurados de negocio local'));
+            it.push(li(!!e.mapa_embebido, 'Mapa de Google en la web'));
+        }
+        (d.seo_local || []).forEach(t => it.push(li(false, t.charAt(0).toUpperCase() + t.slice(1))));
+        return `<ul class="dg">${it.join('')}</ul>`;
+    }
+
+    function irATarjeta(id) {
+        let el = $('lead-' + id);
+        if (!el) { RADAR.sector = ''; RADAR.opp = ''; pintarFiltrosRadar(); pintarResultados(); el = $('lead-' + id); }
+        if (!el) return;
+        document.querySelectorAll('.lead-card.resaltado').forEach(c => c.classList.remove('resaltado'));
+        el.classList.add('resaltado');
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function limpiar() {
-        $('nicho').value = ''; $('ciudad').value = ''; $('pais').value = '';
+        $('ciudad').value = ''; $('pais').value = ''; SEL.clear();
+        pintarSectores(); actualizarCreditos();
         $('results').classList.remove('active');
         ocultar($('error'));
-        $('nicho').focus();
+        if (capaPuntos) capaPuntos.clearLayers();
+        $('radarHint').style.display = '';
+        $('ciudad').focus();
     }
-    $('pais').addEventListener('keypress', (e) => { if (e.key === 'Enter') buscar(); });
+    $('pais').addEventListener('keypress', (e) => { if (e.key === 'Enter') escanear(); });
 
     // ------------------------------------------------------------ LEADS
     function poblarFiltros() {
         if ($('fEstado').options.length) return;
         $('fEstado').innerHTML = '<option value="">Todos los estados</option>' +
             Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('');
+        $('fPrioridad').innerHTML = '<option value="">Cualquier prioridad</option><option value="alta">🔥 Alta</option><option value="media">Media</option><option value="baja">Baja</option>';
+        $('fOpp').innerHTML = '<option value="">Cualquier oportunidad</option>' +
+            Object.entries(OPP).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('');
     }
     function poblarFiltroAsignado() {
         const actual = $('fAsignado').value;
@@ -565,6 +784,8 @@
         if ($('fQ').value.trim()) p.set('q', $('fQ').value.trim());
         if ($('fEstado').value) p.set('estado', $('fEstado').value);
         if ($('fAsignado').value) p.set('asignado', $('fAsignado').value);
+        if ($('fPrioridad').value) p.set('prioridad', $('fPrioridad').value);
+        if ($('fOpp').value) p.set('oportunidad', $('fOpp').value);
         if ($('fSeg').checked) p.set('seguimiento', 'pendiente');
         try {
             const { leads } = await api('/api/leads?' + p.toString());
@@ -573,7 +794,7 @@
             aviso($('errorLeads'), 'error', e.message);
         }
     }
-    ['fEstado', 'fAsignado', 'fSeg'].forEach(id => $(id).addEventListener('change', cargarLeads));
+    ['fEstado', 'fAsignado', 'fSeg', 'fPrioridad', 'fOpp'].forEach(id => $(id).addEventListener('change', cargarLeads));
     $('fQ').addEventListener('input', () => { clearTimeout(timerQ); timerQ = setTimeout(cargarLeads, 300); });
 
     function pintarLeads(leads) {
@@ -585,11 +806,12 @@
         const filas = leads.map(l => {
             const vencido = l.proximo_seguimiento && l.proximo_seguimiento <= hoy && ['contactado', 'respondio'].includes(l.estado);
             return `<tr>
-                <td><span class="nombre-lead">${escapeHtml(l.nombre)}</span><span class="sub">${escapeHtml(l.nicho)} · ${escapeHtml(l.ciudad)}</span></td>
+                <td><span class="nombre-lead">${escapeHtml(l.nombre)}</span><span class="sub">${escapeHtml(l.nicho)} · ${escapeHtml(l.ciudad)}</span>
+                    ${l.oportunidades.length ? `<div class="opps" style="margin:4px 0 0">${l.oportunidades.slice(0, 3).map(tagOpp).join('')}</div>` : ''}</td>
+                <td>${l.prioridad ? `<span class="prio prio-${escapeHtml(l.prioridad)}">${PRIO[l.prioridad]}</span><span class="sub score">${l.score}</span>` : '<span class="muted">—</span>'}</td>
                 <td>${escapeHtml(l.telefono) || '<span class="muted">—</span>'}</td>
                 <td>${badgeEstado(l.estado)}${l.canal_contacto ? `<span class="sub">${CANALES[l.canal_contacto]}</span>` : ''}</td>
                 <td>${escapeHtml(l.asignado_nombre) || '<span class="muted">Sin asignar</span>'}</td>
-                <td>${fmtFecha(l.contactado_en && l.contactado_en.slice(0, 10))}</td>
                 <td>${l.proximo_seguimiento ? `<span class="badge ${vencido ? 'badge-error' : 'badge-neutro'}">${fmtFecha(l.proximo_seguimiento)}</span>` : '<span class="muted">—</span>'}</td>
                 <td class="acciones">
                     ${l.estado === 'nuevo'
@@ -599,7 +821,7 @@
             </tr>`;
         }).join('');
         $('leadsTabla').innerHTML = `<div class="tabla-wrap"><table>
-            <thead><tr><th>Negocio</th><th>Teléfono</th><th>Estado</th><th>Asignado a</th><th>Contactado</th><th>Seguimiento</th><th></th></tr></thead>
+            <thead><tr><th>Negocio</th><th>Prioridad</th><th>Teléfono</th><th>Estado</th><th>Asignado a</th><th>Seguimiento</th><th></th></tr></thead>
             <tbody>${filas}</tbody></table></div>`;
     }
 
@@ -625,14 +847,18 @@
             <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(l.direccion) || '—'}</span></div>
         </div>`;
 
-        $('dlgAsunto').hidden = !l.asunto;
-        $('dlgAsunto').innerHTML = l.asunto ? `<strong>Asunto:</strong> ${escapeHtml(l.asunto)}` : '';
-        $('dlgCuerpo').textContent = l.cuerpo;
-        $('dlgMsg').hidden = !l.cuerpo;
+        $('dlgDiag').innerHTML = l.oportunidades.length
+            ? `<div class="opps">${l.oportunidades.map(tagOpp).join('')}</div>
+               <details class="msg-box"><summary>Análisis del negocio${l.score ? ` · puntuación ${l.score}` : ''}</summary>${detalleHtml(Object.assign({}, l, { cuerpo: '' }))}</details>`
+            : '';
+        $('dlgMsg').hidden = false;
         $('dlgMsg').open = !!comoContacto;
-        const wa = $('dlgWa');
-        wa.hidden = !/^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(l.whatsapp || '');
-        if (!wa.hidden) wa.href = l.whatsapp;
+        $('mAngulo').innerHTML = (l.oportunidades.length ? l.oportunidades : [{ tipo: 'sin_web' }])
+            .map(o => `<option value="${o.tipo}">${(OPP[o.tipo] || {}).txt || o.tipo}</option>`).join('');
+        $('mCanal').value = l.canal_recomendado || 'whatsapp';
+        $('mPaso').value = '';
+        $('mVariante').value = '';
+        cargarMensaje();
 
         $('lEstado').innerHTML = Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('');
         $('lAsignado').innerHTML = '<option value="">Sin asignar</option>' +
@@ -656,7 +882,7 @@
         $('dlgHistorial').innerHTML = l.historial.map(h =>
             `<li>${badgeEstado(h.estado)} <strong>${escapeHtml(h.usuario)}</strong> · ${fmtFechaHora(h.fecha)}` +
             `${h.canal ? ' · ' + CANALES[h.canal] : ''}${h.nota ? `<br><span class="muted">${escapeHtml(h.nota)}</span>` : ''}</li>`).join('');
-        dlg.showModal();
+        if (!dlg.open) dlg.showModal();
     }
 
     // Al pasar de "nuevo" a otro estado, proponer al usuario actual si no hay asignado
@@ -690,21 +916,55 @@
     });
 
     function marcarEnResultados(id, estado) {
-        // Actualiza el badge de estado de la tarjeta en los resultados de búsqueda
-        document.querySelectorAll('#leadsList .lead-card').forEach(card => {
-            const b = card.querySelector('button[onclick^="abrirLead(' + id + ',"]');
-            if (!b) return;
-            const viejo = card.querySelector('.lead-title .badge:last-child');
-            if (viejo) viejo.outerHTML = badgeEstado(estado);
-        });
+        const l = RADAR.leads.find(x => x.id === id);
+        if (l) { l.estado = estado; pintarResultados(); }
     }
 
     $('dlgCerrar').addEventListener('click', () => dlg.close());
     $('dlgCancelar').addEventListener('click', () => dlg.close());
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
 
+    // Mensaje bajo demanda: ángulo, canal, paso de la secuencia y variante A/B
+    let MSG = null;
+    async function cargarMensaje() {
+        const p = new URLSearchParams();
+        ['mAngulo:angulo', 'mCanal:canal', 'mPaso:paso', 'mVariante:variante'].forEach(par => {
+            const [id, clave] = par.split(':');
+            if ($(id).value !== '') p.set(clave, $(id).value);
+        });
+        try {
+            MSG = await api(`/api/leads/${leadActual.id}/mensaje?` + p.toString());
+        } catch (e) { aviso($('dlgError'), 'error', e.message); return; }
+        $('mAngulo').value = MSG.angulo; $('mCanal').value = MSG.canal;
+        $('mPaso').value = String(MSG.paso); $('mVariante').value = MSG.variante;
+        $('dlgAsunto').hidden = !MSG.asunto;
+        $('dlgAsunto').innerHTML = MSG.asunto ? `<strong>Asunto:</strong> ${escapeHtml(MSG.asunto)}` : '';
+        $('dlgCuerpo').textContent = MSG.cuerpo;
+        $('dlgMsgMeta').textContent = `${MSG.palabras} palabras · ${MSG.toques} envío(s) registrados · plantilla ${MSG.plantilla}`;
+        const wa = $('dlgWa');
+        const base = leadActual.whatsapp || '';
+        wa.hidden = !/^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(base) || MSG.canal === 'email';
+        if (!wa.hidden) wa.href = base + (base.includes('?') ? '&' : '?') + 'text=' + encodeURIComponent(MSG.cuerpo);
+    }
+    ['mAngulo', 'mCanal', 'mPaso', 'mVariante'].forEach(id => $(id).addEventListener('change', cargarMensaje));
+
+    $('dlgEnviado').addEventListener('click', async () => {
+        if (!MSG) return;
+        const btn = $('dlgEnviado');
+        ocultar($('dlgError'));
+        btn.disabled = true;
+        try {
+            await api(`/api/leads/${leadActual.id}/toque`, json('POST', { canal: MSG.canal, plantilla: MSG.plantilla }));
+            await abrirLead(leadActual.id, true);
+            if ($('vista-leads').classList.contains('active')) cargarLeads();
+            if ($('vista-buscar').classList.contains('active')) marcarEnResultados(leadActual.id, leadActual.estado);
+        } catch (e) { aviso($('dlgError'), 'error', e.message); }
+        finally { btn.disabled = false; }
+    });
+
     $('dlgCopiar').addEventListener('click', async () => {
-        const txt = (leadActual.asunto ? 'Asunto: ' + leadActual.asunto + '\n\n' : '') + leadActual.cuerpo;
+        if (!MSG) return;
+        const txt = (MSG.asunto ? 'Asunto: ' + MSG.asunto + '\n\n' : '') + MSG.cuerpo;
         const span = $('dlgCopiar').querySelector('span');
         try { await navigator.clipboard.writeText(txt); span.textContent = 'Copiado'; }
         catch (e) { span.textContent = 'No se pudo copiar'; }
@@ -764,6 +1024,9 @@
                     ${barras(a.por_canal.map(c => ({ etiqueta: CANALES[c.nombre] || c.nombre, valor: c.contactados })))}</div>
                     <div class="card"><h3>Respondieron por canal</h3>
                     ${barras(a.por_canal.map(c => ({ etiqueta: CANALES[c.nombre] || c.nombre, valor: c.respondieron, clase: 'exito' })))}</div></div>` : ''}
+                ${tablaGrupo('Por tipo de oportunidad', a.por_oportunidad, '')}
+                ${tablaGrupo('Por prioridad', a.por_prioridad, '')}
+                ${tablaGrupo('Por plantilla de mensaje (A/B)', a.por_plantilla, '')}
                 ${tablaGrupo('Por usuario', a.por_usuario, '')}
                 ${tablaGrupo('Por nicho', a.por_nicho, '')}
                 ${tablaGrupo('Por ciudad', a.por_ciudad, '')}`;

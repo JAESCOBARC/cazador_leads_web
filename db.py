@@ -11,15 +11,18 @@ import re
 import secrets
 from datetime import datetime, timezone
 
+from datetime import timedelta
+
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, ForeignKey, Integer, MetaData, String, Table, Text,
-    create_engine, select, insert, update, func,
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, MetaData, String, Table, Text,
+    create_engine, inspect, select, insert, update, delete, func, text,
 )
 from werkzeug.security import generate_password_hash
 
 ESTADOS = ['nuevo', 'contactado', 'respondio', 'reunion', 'cerrado', 'descartado']
 CANALES = ['whatsapp', 'email', 'telefono']
 ROLES = ['admin', 'usuario']
+PRIORIDADES = ['alta', 'media', 'baja']
 
 
 def _url():
@@ -75,6 +78,23 @@ leads = Table(
     Column('notas', Text),
     Column('creado_en', DateTime, nullable=False, default=ahora),
     Column('actualizado_en', DateTime, nullable=False, default=ahora),
+    # --- Radar: datos reales de Maps + diagnóstico de oportunidades ---
+    Column('rating', Float),
+    Column('resenas', Integer),
+    Column('tipo', String(160)),
+    Column('lat', Float),
+    Column('lon', Float),
+    Column('web_url', String(500)),
+    Column('tiene_web', Boolean),
+    Column('maps_url', String(500)),
+    Column('score', Integer),
+    Column('prioridad', String(10)),
+    Column('ticket', String(10)),
+    Column('competidores', Integer),
+    Column('oportunidades', Text),   # JSON: lista de oportunidades detectadas
+    Column('diagnostico', Text),     # JSON: detalle del escaneo
+    Column('plantilla', String(60)),  # angulo:canal:variante del mensaje generado
+    Column('escaneado_en', DateTime),
 )
 
 contactos = Table(
@@ -86,12 +106,49 @@ contactos = Table(
     Column('canal', String(20)),
     Column('nota', Text),
     Column('fecha', DateTime, nullable=False, default=ahora),
+    Column('plantilla', String(60)),
+)
+
+# Respuestas de SerpAPI ya consultadas: evita gastar créditos repitiendo la misma búsqueda.
+cache_busqueda = Table(
+    'cache_busqueda', metadata,
+    Column('clave', String(255), primary_key=True),
+    Column('datos', Text, nullable=False),
+    Column('creado_en', DateTime, nullable=False, default=ahora),
 )
 
 
 def init_db():
     metadata.create_all(engine)
+    _migrar()
     _crear_admin_inicial()
+
+
+def _migrar():
+    """create_all no añade columnas a tablas existentes: las añade aquí (ALTER TABLE
+    ADD COLUMN, nullable) para no perder los leads ya guardados."""
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for tabla in (leads, contactos):
+            existentes = {c['name'] for c in insp.get_columns(tabla.name)}
+            for col in tabla.columns:
+                if col.name not in existentes:
+                    tipo = col.type.compile(engine.dialect)
+                    conn.execute(text(f'ALTER TABLE {tabla.name} ADD COLUMN {col.name} {tipo}'))
+
+
+def cache_get(clave, ttl_dias=7):
+    with engine.connect() as conn:
+        row = conn.execute(select(cache_busqueda).where(cache_busqueda.c.clave == clave)).mappings().first()
+    if not row or row['creado_en'] < ahora() - timedelta(days=ttl_dias):
+        return None
+    return row['datos']
+
+
+def cache_set(clave, datos):
+    with engine.begin() as conn:
+        conn.execute(delete(cache_busqueda).where(cache_busqueda.c.clave == clave))
+        conn.execute(insert(cache_busqueda).values(clave=clave, datos=datos, creado_en=ahora()))
 
 
 def _crear_admin_inicial():

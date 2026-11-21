@@ -8,23 +8,25 @@ Expone la funcionalidad de búsqueda como servicio web
 import os
 import csv
 import io
+import json
 import secrets
 import time
 from datetime import date, timedelta
 from functools import wraps
 
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response
-from flask_cors import CORS
 from pathlib import Path
 from sqlalchemy import select, insert, update, func, and_, or_
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
-from cazador_leads import CazadorLeads
+import escaner
+import mensajes
+import radar
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-CORS(app)
+# Sin CORS: la interfaz se sirve desde este mismo origen.
 
 app.config.update(
     SECRET_KEY=os.environ.get('SECRET_KEY') or secrets.token_hex(32),
@@ -65,6 +67,11 @@ def exigir_login():
             return jsonify({'error': 'Sesión no iniciada'}), 401
         return redirect(url_for('login'))
     request.user = user
+    # Anti-CSRF: las peticiones que modifican datos deben llevar una cabecera propia
+    # (un sitio externo no puede enviarla sin permiso CORS, y aquí no hay CORS).
+    if (request.method in ('POST', 'PATCH', 'PUT', 'DELETE') and request.path.startswith('/api/')
+            and request.headers.get('X-Requested-With') != 'fetch'):
+        return jsonify({'error': 'Petición no permitida'}), 403
     return None
 
 
@@ -121,152 +128,47 @@ def yo():
     return jsonify({'id': u['id'], 'usuario': u['usuario'], 'nombre': u['nombre'], 'rol': u['rol']})
 
 
-@app.route('/api/buscar', methods=['POST'])
-def buscar():
-    """API endpoint para buscar prospects"""
-    try:
-        data = request.json
-        nicho = data.get('nicho', '').strip()
-        ciudad = data.get('ciudad', '').strip()
-        pais = data.get('pais', '').strip()
-
-        print(f"[DEBUG] Búsqueda recibida: nicho='{nicho}', ciudad='{ciudad}', pais='{pais}'")
-
-        if not nicho or not ciudad or not pais:
-            return jsonify({'error': 'Nicho, ciudad y país son requeridos'}), 400
-
-        # Guardar inputs en archivos
-        nicho_file = BASE_DIR / 'nicho.txt'
-        ciudad_file = BASE_DIR / 'ciudad.txt'
-        pais_file = BASE_DIR / 'pais.txt'
-
-        with open(nicho_file, 'w', encoding='utf-8') as f:
-            f.write(nicho)
-        with open(ciudad_file, 'w', encoding='utf-8') as f:
-            f.write(ciudad)
-        with open(pais_file, 'w', encoding='utf-8') as f:
-            f.write(pais)
-
-        print(f"[DEBUG] Archivos guardados: {nicho_file}, {ciudad_file}, {pais_file}")
-
-        # Ejecutar búsqueda con datos pasados directamente
-        cazador = CazadorLeads(base_dir=BASE_DIR)
-        cazador.nicho = nicho
-        cazador.ciudad = ciudad
-        cazador.pais = pais
-        cazador.localizacion = f"{ciudad}, {pais}"
-
-        print(f"[DEBUG] Iniciando búsqueda con: {nicho} en {ciudad}, {pais}")
-
-        resultados = cazador.buscar_en_google()
-        leads = cazador.filtrar_sin_web(resultados)
-
-        print(f"[DEBUG] Leads encontrados: {len(leads)}")
-
-        if not leads:
-            error_msg = cazador.error_busqueda or 'No se encontraron negocios sin web para esta búsqueda'
-            return jsonify({'error': error_msg}), 404
-
-        # Generar mensajes personalizados (WhatsApp/email/teléfono según lo real disponible)
-        emails_generados = []
-        for i, lead in enumerate(leads, 1):
-            email_data = cazador.generar_mensaje_personalizado(lead, i)
-            emails_generados.append(email_data)
-
-        # Guardar output
-        cazador.leads = leads
-        cazador.guardar_output(emails_generados)
-
-        print(f"[DEBUG] Emails generados: {len(emails_generados)}")
-
-        guardados = guardar_leads(emails_generados, nicho, ciudad, pais, request.user['id'])
-
-        # Retornar resultados formateados (el total refleja lo REAL encontrado, nunca se completa)
-        resultado_api = {
-            'nicho': nicho,
-            'ciudad': ciudad,
-            'pais': pais,
-            'total': len(emails_generados),
-            'advertencia': (
-                f'Solo se encontraron {len(emails_generados)} negocios reales sin web '
-                f'(se buscaban hasta {cazador.max_results}). Esto es lo real disponible en Google Maps para esta búsqueda.'
-                if len(emails_generados) < cazador.max_results else None
-            ),
-            'leads': [
-                {
-                    'numero': e['numero'],
-                    'nombre': e['nombre'],
-                    'telefono': e['telefono'],
-                    'whatsapp': e['whatsapp'],
-                    'whatsapp_confirmado': e['whatsapp_confirmado'],
-                    'redes_sociales': e['redes_sociales'],
-                    'email': e['email'],
-                    'canal_recomendado': e['canal_recomendado'],
-                    'direccion': e['direccion'],
-                    'asunto': e['asunto'],
-                    'cuerpo': e['cuerpo'],
-                    'id': guardados[i]['id'],
-                    'estado': guardados[i]['estado'],
-                    'repetido': guardados[i]['repetido'],
-                }
-                for i, e in enumerate(emails_generados)
-            ]
-        }
-
-        return jsonify(resultado_api), 200
-
-    except Exception as e:
-        print(f"[ERROR] {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+@app.route('/api/sectores')
+def sectores():
+    return jsonify({'sectores': escaner.SECTORES, 'coberturas': {
+        k: {'puntos': p, 'paginas': g, 'creditos_por_sector': p * g} for k, (p, g) in radar.COBERTURAS.items()}})
 
 
-def _limpio(v):
-    v = (v or '').strip()
-    return '' if v.upper() == 'N/A' else v
+@app.route('/api/radar', methods=['POST'])
+def lanzar_radar():
+    """Lanza una exploración en segundo plano y devuelve el id para consultar el progreso."""
+    d = request.get_json(silent=True) or {}
+    ciudad = (d.get('ciudad') or '').strip()
+    pais = (d.get('pais') or '').strip()
+    sectores_ = [str(x).strip() for x in (d.get('sectores') or []) if str(x).strip()]
+    sectores_ = list(dict.fromkeys(sectores_))[:radar.MAX_SECTORES]
+    cobertura = d.get('cobertura') if d.get('cobertura') in radar.COBERTURAS else 'normal'
+    if not ciudad or not pais or not sectores_:
+        return jsonify({'error': 'Ciudad, país y al menos un sector son requeridos'}), 400
+    job_id = radar.iniciar(ciudad, pais, sectores_, cobertura, bool(d.get('analizar_webs', True)),
+                           request.user['id'])
+    return jsonify({'job_id': job_id, 'creditos_estimados': radar.creditos_estimados(len(sectores_), cobertura)}), 202
 
 
-def guardar_leads(emails, nicho, ciudad, pais, user_id):
-    """Guarda los leads de una búsqueda sin duplicar los ya existentes.
-    Devuelve, por posición, {id, estado, repetido}."""
-    salida = []
-    with db.engine.begin() as conn:
-        for e in emails:
-            tel = _limpio(e.get('telefono'))
-            clave = db.clave_lead(e['nombre'], tel, ciudad)
-            existente = conn.execute(select(db.leads.c.id, db.leads.c.estado)
-                                     .where(db.leads.c.clave == clave)).first()
-            if existente:
-                salida.append({'id': existente.id, 'estado': existente.estado, 'repetido': True})
-                continue
-            res = conn.execute(insert(db.leads).values(
-                clave=clave, nombre=e['nombre'], telefono=tel, email=_limpio(e.get('email')),
-                whatsapp=e.get('whatsapp') or '', redes_sociales=e.get('redes_sociales') or '',
-                direccion=_limpio(e.get('direccion')), nicho=nicho, ciudad=ciudad, pais=pais,
-                canal_recomendado=e.get('canal_recomendado'), asunto=e.get('asunto') or '',
-                cuerpo=e.get('cuerpo') or '', estado='nuevo',
-                creado_en=db.ahora(), actualizado_en=db.ahora(),
-            ))
-            salida.append({'id': res.inserted_primary_key[0], 'estado': 'nuevo', 'repetido': False})
-    return salida
-
-
-@app.route('/api/resultados', methods=['GET'])
-def obtener_resultados():
-    """Obtiene los últimos resultados guardados"""
-    try:
-        output_file = BASE_DIR / 'prospects_encontrados.md'
-        if not output_file.exists():
-            return jsonify({'error': 'No hay resultados guardados'}), 404
-
-        with open(output_file, 'r', encoding='utf-8') as f:
-            contenido = f.read()
-
-        return jsonify({'contenido': contenido}), 200
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/api/radar/<job_id>')
+def estado_radar(job_id):
+    job = radar.estado(job_id)
+    if not job or job['user_id'] != request.user['id']:
+        return jsonify({'error': 'Exploración no encontrada'}), 404
+    out = {'estado': job['estado'], 'etapa': job['etapa'], 'progreso': job['progreso'], 'error': job['error']}
+    if job['estado'] == 'listo':
+        res = dict(job['resultado'])
+        ids = res.pop('lead_ids')
+        if ids:
+            with db.engine.connect() as conn:
+                nombres = _nombres_usuarios(conn)
+                rows = conn.execute(select(db.leads).where(db.leads.c.id.in_(ids))).mappings().all()
+            por_id = {r['id']: _lead_dict(r, nombres) for r in rows}
+            res['leads'] = sorted((por_id[i] for i in ids if i in por_id), key=lambda l: -(l['score'] or 0))
+        else:
+            res['leads'] = []
+        out['resultado'] = res
+    return jsonify(out)
 
 
 # ---------------------------------------------------------------- Leads
@@ -286,7 +188,20 @@ def _lead_dict(r, nombres):
         'asignado_nombre': nombres.get(r['asignado_a']), 'contactado_en': _iso(r['contactado_en']),
         'proximo_seguimiento': _iso(r['proximo_seguimiento']), 'notas': r['notas'] or '',
         'creado_en': _iso(r['creado_en']),
+        'rating': r['rating'], 'resenas': r['resenas'], 'tipo': r['tipo'] or '', 'lat': r['lat'], 'lon': r['lon'],
+        'web_url': r['web_url'] or '', 'tiene_web': r['tiene_web'], 'maps_url': r['maps_url'] or '',
+        'score': r['score'] or 0, 'prioridad': r['prioridad'], 'ticket': r['ticket'],
+        'competidores': r['competidores'], 'plantilla': r['plantilla'],
+        'oportunidades': _json(r['oportunidades'], []), 'diagnostico': _json(r['diagnostico'], {}),
+        'escaneado_en': _iso(r['escaneado_en']),
     }
+
+
+def _json(v, defecto):
+    try:
+        return json.loads(v) if v else defecto
+    except ValueError:
+        return defecto
 
 
 def _nombres_usuarios(conn):
@@ -308,6 +223,12 @@ def listar_leads():
     if request.args.get('seguimiento') == 'pendiente':
         cond.append(and_(L.c.proximo_seguimiento.isnot(None), L.c.proximo_seguimiento <= date.today(),
                          L.c.estado.in_(['contactado', 'respondio'])))
+    prioridad = request.args.get('prioridad')
+    if prioridad in db.PRIORIDADES:
+        cond.append(L.c.prioridad == prioridad)
+    opp = request.args.get('oportunidad')
+    if opp in escaner.OPORTUNIDADES:
+        cond.append(L.c.oportunidades.like('%"tipo": "' + opp + '"%'))
     q = (request.args.get('q') or '').strip().lower()
     if q:
         like = f'%{q}%'
@@ -315,7 +236,7 @@ def listar_leads():
                         func.lower(L.c.nicho).like(like), func.lower(L.c.ciudad).like(like)))
     with db.engine.connect() as conn:
         nombres = _nombres_usuarios(conn)
-        rows = conn.execute(select(L).where(*cond).order_by(L.c.creado_en.desc(), L.c.id.desc())
+        rows = conn.execute(select(L).where(*cond).order_by(func.coalesce(L.c.score, 0).desc(), L.c.creado_en.desc(), L.c.id.desc())
                             .limit(500)).mappings().all()
     return jsonify({'leads': [_lead_dict(r, nombres) for r in rows]})
 
@@ -383,6 +304,9 @@ def actualizar_lead(lead_id):
             cambios['notas'] = (data['notas'] or '')[:5000]
 
         cambio_estado = estado != lead['estado']
+        if (cambio_estado and estado == 'contactado' and 'proximo_seguimiento' not in data
+                and not lead['proximo_seguimiento']):
+            cambios['proximo_seguimiento'] = date.today() + timedelta(days=mensajes.PASOS_DIAS[0])
         cambios.update(estado=estado, asignado_a=asignado, canal_contacto=canal or None,
                        actualizado_en=db.ahora())
         if cambio_estado and estado != 'nuevo' and not lead['contactado_en']:
@@ -392,7 +316,59 @@ def actualizar_lead(lead_id):
         if cambio_estado:
             conn.execute(insert(db.contactos).values(
                 lead_id=lead_id, usuario_id=request.user['id'], estado=estado, canal=canal or None,
-                nota=(data.get('nota') or '')[:2000], fecha=db.ahora()))
+                nota=(data.get('nota') or '')[:2000], fecha=db.ahora(),
+                plantilla=(data.get('plantilla') or '')[:60] or None))
+    return detalle_lead(lead_id)
+
+
+@app.route('/api/leads/<int:lead_id>/mensaje')
+def mensaje_lead(lead_id):
+    """Mensaje para el ángulo/canal/paso pedidos (por defecto: principal, canal real y paso según
+    los contactos ya registrados)."""
+    with db.engine.connect() as conn:
+        r = conn.execute(select(db.leads).where(db.leads.c.id == lead_id)).mappings().first()
+        if not r:
+            return jsonify({'error': 'Lead no encontrado'}), 404
+        enviados = conn.execute(select(func.count()).select_from(db.contactos).where(
+            db.contactos.c.lead_id == lead_id, db.contactos.c.estado == 'contactado')).scalar()
+    paso = request.args.get('paso')
+    paso = int(paso) if paso and paso.isdigit() else min(enviados, 2)
+    lead = radar.lead_desde_fila(r)
+    m = mensajes.construir(lead, angulo=request.args.get('angulo'), canal=request.args.get('canal'),
+                           paso=min(paso, 2), variante=request.args.get('variante'))
+    m['toques'] = enviados
+    return jsonify(m)
+
+
+@app.route('/api/leads/<int:lead_id>/toque', methods=['POST'])
+def registrar_toque(lead_id):
+    """Registra un nuevo contacto (mensaje inicial o seguimiento) y agenda el siguiente
+    según la secuencia: día +3 tras el primero, +4 tras el seguimiento, luego nada."""
+    d = request.get_json(silent=True) or {}
+    canal = d.get('canal')
+    if canal not in db.CANALES:
+        return jsonify({'error': 'Canal no válido'}), 400
+    L = db.leads
+    with db.engine.begin() as conn:
+        lead = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
+        if not lead:
+            return jsonify({'error': 'Lead no encontrado'}), 404
+        if lead['estado'] in ('cerrado', 'descartado'):
+            return jsonify({'error': 'Este lead ya está cerrado o descartado'}), 400
+        previos = conn.execute(select(func.count()).select_from(db.contactos).where(
+            db.contactos.c.lead_id == lead_id, db.contactos.c.estado == 'contactado')).scalar()
+        estado = lead['estado'] if lead['estado'] != 'nuevo' else 'contactado'
+        dias = mensajes.PASOS_DIAS.get(previos)
+        cambios = dict(estado=estado, canal_contacto=canal, actualizado_en=db.ahora(),
+                       asignado_a=lead['asignado_a'] or request.user['id'],
+                       proximo_seguimiento=date.today() + timedelta(days=dias) if dias else None)
+        if not lead['contactado_en']:
+            cambios['contactado_en'] = db.ahora()
+        conn.execute(update(L).where(L.c.id == lead_id).values(**cambios))
+        conn.execute(insert(db.contactos).values(
+            lead_id=lead_id, usuario_id=request.user['id'], estado='contactado',
+            canal=canal, nota=(d.get('nota') or '')[:2000], fecha=db.ahora(),
+            plantilla=(d.get('plantilla') or '')[:60] or None))
     return detalle_lead(lead_id)
 
 
@@ -409,17 +385,37 @@ def exportar_csv():
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(['Nombre', 'Teléfono', 'Email', 'Dirección', 'Nicho', 'Ciudad', 'País', 'Estado',
-                'Canal contacto', 'Asignado a', 'Contactado', 'Próximo seguimiento', 'Notas'])
+                'Canal contacto', 'Asignado a', 'Contactado', 'Próximo seguimiento', 'Notas',
+                'Prioridad', 'Score', 'Oportunidades', 'Web', 'Rating', 'Reseñas'])
     for r in rows:
         w.writerow([seguro(x) for x in (
             r['nombre'], r['telefono'], r['email'], r['direccion'], r['nicho'], r['ciudad'], r['pais'],
             r['estado'], r['canal_contacto'], nombres.get(r['asignado_a'], ''),
-            _iso(r['contactado_en']), _iso(r['proximo_seguimiento']), r['notas'])])
+            _iso(r['contactado_en']), _iso(r['proximo_seguimiento']), r['notas'], r['prioridad'], r['score'],
+            ', '.join(o['titulo'] for o in _json(r['oportunidades'], [])), r['web_url'], r['rating'],
+            r['resenas'])])
     return Response('﻿' + buf.getvalue(), mimetype='text/csv; charset=utf-8',
                     headers={'Content-Disposition': 'attachment; filename=leads.csv'})
 
 
 # ---------------------------------------------------------------- Analítica
+
+def por_oportunidad(rows):
+    """Qué tipo de oportunidad convierte mejor (un lead cuenta en cada oportunidad que tiene)."""
+    g = {}
+    for r in rows:
+        for o in _json(r['oportunidades'], []):
+            d = g.setdefault(o['tipo'], {'nombre': o['titulo'], 'total': 0, 'contactados': 0,
+                                         'respondieron': 0, 'cerrados': 0})
+            d['total'] += 1
+            d['contactados'] += r['estado'] != 'nuevo'
+            d['respondieron'] += r['estado'] in ('respondio', 'reunion', 'cerrado')
+            d['cerrados'] += r['estado'] == 'cerrado'
+    out = sorted(g.values(), key=lambda d: -d['total'])
+    for d in out:
+        d['tasa_respuesta'] = round(100 * d['respondieron'] / d['contactados'], 1) if d['contactados'] else 0.0
+    return out
+
 
 @app.route('/api/analitica')
 def analitica():
@@ -479,6 +475,9 @@ def analitica():
         'por_canal': [d for d in agrupar(lambda r: r['canal_contacto']) if d['nombre'] != '—'],
         'por_nicho': agrupar(lambda r: r['nicho'])[:10],
         'por_ciudad': agrupar(lambda r: r['ciudad'])[:10],
+        'por_prioridad': agrupar(lambda r: (r['prioridad'] or '').capitalize()),
+        'por_plantilla': agrupar(lambda r: r['plantilla'])[:12],
+        'por_oportunidad': por_oportunidad(rows),
         'por_usuario': por_usuario,
         'por_semana': [{'semana': s.isoformat(), 'total': conteo[s]} for s in semanas],
     })
@@ -551,5 +550,5 @@ if __name__ == '__main__':
     # Solo se usa en desarrollo local (python app.py). En producción (Render)
     # gunicorn importa `app` directamente y este bloque no se ejecuta.
     puerto = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
+    debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     app.run(debug=debug, host='0.0.0.0', port=puerto)

@@ -11,9 +11,28 @@ Idéntico al proyecto **Personalizador de Emails Fríos**:
 - Tuteo siempre
 - Primera persona conversacional: "vi que no aparecen", "encontré que"
 - Nunca impersonal: "se detectó", "no aparecieron"
-- Un único servicio por email: desarrollo web
+- Un único servicio por mensaje, elegido según la oportunidad principal del negocio (desarrollo web, medición para Ads, SEO local, app de facturación y gastos, reseñas)
 - Máximo 150 palabras en cuerpo
 - Sin hipérboles ni jerga de agencia
+
+## Radar de oportunidades (versión web)
+
+La app web escanea una ciudad por sectores y detecta qué le falta a cada negocio (`escaner.py`):
+
+| Oportunidad | Cómo se detecta | ¿Verificada? |
+|---|---|---|
+| Sin web | Maps no lista web propia (solo redes, WhatsApp o directorio) | Sí |
+| Web débil | Sin HTTPS, sin adaptación a móvil, lenta o `business.site` | Sí (si no responde: "por confirmar") |
+| Sin medición Ads | La web no tiene Analytics, píxel de Meta, Google Ads ni Tag Manager | Sí; no se afirma si la web es solo JavaScript o bloquea el escaneo |
+| La web no capta | Sin formulario, teléfono ni WhatsApp visibles | Sí |
+| SEO local débil | Pocas reseñas, sin horario, sin datos estructurados, título sin ciudad, sin mapa | Sí |
+| Reputación | Rating < 4,2 con reseñas | Sí |
+| App de gestión | **Hipótesis** por tipo de negocio; se confirma en la primera conversación | No |
+
+Cada lead recibe un score (demanda en Maps + oportunidades + alcanzabilidad + ticket del sector) y prioridad alta/media/baja.
+El ticket por sector es una estimación orientativa. El mini-caso solo aparece si defines `CASO_EXITO` (un caso real).
+Seguimiento: mensaje inicial → +3 días → +4 días → cierre. Cada plantilla (ángulo:canal:variante A/B) se mide en Analítica.
+Tests: `pytest tests` (offline, sin gastar créditos).
 
 ## Flujo de Ejecución
 

@@ -4,12 +4,18 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120
     envVars:
       - key: SERPAPI_KEY
         sync: false
       - key: MAX_RESULTS
-        value: "10"
+        value: "20"
+      - key: MAX_SCAN_WEBS
+        value: "40"
+      - key: CASO_EXITO
+        sync: false
+      - key: NOMINATIM_CONTACTO
+        sync: false
       - key: REMITENTE_NOMBRE
         sync: false
       - key: REMITENTE_CARGO

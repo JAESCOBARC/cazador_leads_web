@@ -7,6 +7,7 @@ página web y genera emails personalizados. No genera ni completa con datos
 simulados/inventados bajo ninguna circunstancia.
 """
 
+import json
 import os
 import re
 import time
@@ -16,11 +17,21 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+import mensajes
+from escaner import clasificar_url, evaluar
+
 try:
     import requests
 except ImportError:
     print("⚠️  Instala las dependencias: pip install -r requirements.txt")
     exit(1)
+
+
+def _user_agent():
+    """User-Agent genérico. Nominatim pide un contacto en el User-Agent: si quieres
+    incluirlo, defínelo tú en la variable de entorno NOMINATIM_CONTACTO (no se guarda en el código)."""
+    contacto = os.getenv("NOMINATIM_CONTACTO", "").strip()
+    return f"CazadorLeadsWeb/1.0 ({contacto})" if contacto else "CazadorLeadsWeb/1.0"
 
 
 class CazadorLeads:
@@ -39,6 +50,10 @@ class CazadorLeads:
         self.localizacion = ""  # Combinación de ciudad, país
         self.leads = []
         self.error_busqueda = None
+        self.advertencias = []
+        self.creditos_usados = 0
+        self.geo = None
+        self.ya_guardado = None  # función opcional: negocio -> bool (omite leads ya guardados)
 
         try:
             self.max_results = int(os.getenv("MAX_RESULTS", "10"))
@@ -127,7 +142,7 @@ class CazadorLeads:
     def _geocodificar_nominatim(self, consulta):
         """Nominatim con reintentos ante 429 (límite de 1 req/s, IPs compartidas como Render)."""
         url = "https://nominatim.openstreetmap.org/search"
-        headers = {"User-Agent": "CazadorLeadsWeb/1.0 (jhonya2000@gmail.com)"}
+        headers = {"User-Agent": _user_agent()}
         params = {"q": consulta, "format": "json", "limit": 1}
 
         for espera in (0, 2, 5):
@@ -152,7 +167,7 @@ class CazadorLeads:
         response = requests.get(
             "https://photon.komoot.io/api/",
             params={"q": consulta, "limit": 1},
-            headers={"User-Agent": "CazadorLeadsWeb/1.0 (jhonya2000@gmail.com)"},
+            headers={"User-Agent": _user_agent()},
             timeout=15,
         )
         response.raise_for_status()
@@ -164,12 +179,55 @@ class CazadorLeads:
         nombre = ", ".join(x for x in (p.get("name"), p.get("state"), p.get("country")) if x)
         return {"lat": float(lat), "lon": float(lon), "display_name": nombre or consulta}
 
-    def buscar_en_google(self):
+    # Desplazamientos (en grados, ~2,7 km) para cubrir varios barrios además del centro
+    _OFFSETS = [(0, 0), (0.025, 0), (-0.025, 0), (0, 0.025), (0, -0.025),
+                (0.025, 0.025), (0.025, -0.025), (-0.025, 0.025), (-0.025, -0.025)]
+
+    def _consultar_serpapi(self, serpapi_key, query, lat, lon, start, cache):
+        """Una consulta a Google Maps (SerpAPI) con caché: si ya se hizo, no gasta crédito."""
+        clave = f"gm|{query.lower()}|{lat:.4f},{lon:.4f}|{start}"
+        if cache:
+            guardado = cache.get(clave)
+            if guardado:
+                return json.loads(guardado), True
+        params = {"engine": "google_maps", "type": "search", "q": query,
+                  "ll": f"@{lat},{lon},14z", "api_key": serpapi_key}
+        if start:
+            params["start"] = start
+        response = requests.get("https://serpapi.com/search", params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        if "error" in data:
+            # "sin resultados" no es un fallo: simplemente no hay más páginas
+            if "hasn't returned any results" in str(data["error"]) or "no results" in str(data["error"]).lower():
+                return {"local_results": []}, False
+            raise RuntimeError(f"SerpAPI: {data['error']}")
+        if cache:
+            cache.set(clave, json.dumps({k: data.get(k) for k in ("local_results", "place_results")},
+                                        ensure_ascii=False))
+        self.creditos_usados += 1
+        return data, False
+
+    def buscar_en_google(self, paginas=None, puntos=1, cache=None, progreso=None):
         """Busca negocios REALES en Google Maps vía SerpAPI. No genera ni completa
         con datos simulados bajo ninguna circunstancia: si la búsqueda falla o no hay
-        resultados, se retorna una lista vacía junto con self.error_busqueda explicando por qué."""
+        resultados, se retorna una lista vacía junto con self.error_busqueda explicando por qué.
+
+        paginas: páginas de ~20 resultados por punto (por defecto env MAPS_PAGINAS o 1).
+        puntos:  1 = centro de la ciudad; 5 = centro + 4 barrios; 9 = cuadrícula completa.
+        cache:   objeto con get(clave)/set(clave, texto) para no repetir consultas pagadas.
+        """
         self.error_busqueda = None
+        self.advertencias = []
+        self.creditos_usados = 0
         query = self.nicho.strip()
+        if paginas is None:
+            try:
+                paginas = int(os.getenv("MAPS_PAGINAS", "1"))
+            except ValueError:
+                paginas = 1
+        paginas = max(1, min(int(paginas), 3))
+        puntos = max(1, min(int(puntos), len(self._OFFSETS)))
 
         print(f"\n🔍 Buscando: '{query}' en {self.ciudad}, {self.pais}")
 
@@ -194,81 +252,45 @@ class CazadorLeads:
             return []
 
         print(f"   ✓ Ubicación resuelta: {geo['display_name']}")
+        self.geo = geo
 
-        # 2. Buscar en Google Maps real vía SerpAPI usando coordenadas
+        # 2. Consultar Google Maps (varios puntos x varias páginas), sin duplicados
+        vistos, lugares = set(), []
+        total_pasos = puntos * paginas
+        paso = 0
         try:
-            url = "https://serpapi.com/search"
-            params = {
-                "engine": "google_maps",
-                "q": query,
-                "ll": f"@{geo['lat']},{geo['lon']},14z",
-                "api_key": serpapi_key
-            }
-
-            print(f"   📡 Consultando Google Maps (SerpAPI)...")
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-
-            if "error" in data:
-                self.error_busqueda = f"SerpAPI: {data['error']}"
-                print(f"   ❌ {self.error_busqueda}")
-                return []
-
-            local_results = data.get("local_results", [])
-            print(f"   📊 Negocios reales encontrados: {len(local_results)}")
-
-            # Dominios que Google Maps a veces lista en el campo "website" pero que
-            # NO son una página web propia (solo mensajería/redes) — un negocio con
-            # únicamente uno de estos enlaces sigue siendo un lead válido (sin web).
-            DOMINIOS_WHATSAPP = ("wa.me", "api.whatsapp.com", "whatsapp.com")
-            DOMINIOS_REDES = ("m.me", "messenger.com", "facebook.com", "instagram.com", "linktr.ee")
-
-            leads = []
-            for place in local_results:
-                nombre = place.get("title", "")
-                if not nombre:
-                    continue
-
-                website = place.get("website", "") or ""
-                website_lower = website.lower()
-
-                es_whatsapp = bool(website) and any(d in website_lower for d in DOMINIOS_WHATSAPP)
-                es_red_social = bool(website) and any(d in website_lower for d in DOMINIOS_REDES)
-                es_web_propia = bool(website) and not es_whatsapp and not es_red_social
-
-                place_id = place.get("place_id", "")
-                maps_url = f"https://www.google.com/maps/place/?q=place_id:{place_id}" if place_id else ""
-
-                leads.append({
-                    "nombre": nombre,
-                    "telefono": place.get("phone", ""),
-                    "whatsapp": website if es_whatsapp else None,
-                    "redes_sociales": website if es_red_social else None,
-                    "email": None,  # SerpAPI/Google Maps no expone emails; nunca se inventa
-                    "direccion": place.get("address", ""),
-                    "tiene_web": es_web_propia,
-                    "url": website,
-                    "maps_url": maps_url
-                })
-
-                if es_web_propia:
-                    estado = "✓ CON WEB"
-                elif es_whatsapp:
-                    estado = "✗ SIN WEB (tiene WhatsApp)"
-                elif es_red_social:
-                    estado = "✗ SIN WEB (tiene red social)"
-                else:
-                    estado = "✗ SIN WEB"
-                print(f"      {nombre}: {estado} ({website or 'sin sitio listado'})")
-
-            if not leads:
-                self.error_busqueda = "Google Maps no retornó negocios para esta búsqueda."
-
-            return leads
-
+            for dlat, dlon in self._OFFSETS[:puntos]:
+                for pag in range(paginas):
+                    paso += 1
+                    if progreso:
+                        progreso(paso, total_pasos)
+                    try:
+                        data, _ = self._consultar_serpapi(serpapi_key, query, geo["lat"] + dlat,
+                                                          geo["lon"] + dlon, pag * 20, cache)
+                    except (requests.exceptions.RequestException, RuntimeError) as e:
+                        if not lugares:
+                            raise
+                        self.advertencias.append(f"Una consulta falló y se devuelven resultados parciales: {e}")
+                        break
+                    resultados = data.get("local_results") or []
+                    if not resultados and data.get("place_results"):
+                        resultados = [data["place_results"]]  # búsqueda con un único resultado
+                    nuevos = 0
+                    for p in resultados:
+                        k = p.get("place_id") or (p.get("title"), p.get("address"))
+                        if k in vistos:
+                            continue
+                        vistos.add(k)
+                        lugares.append(p)
+                        nuevos += 1
+                    if len(resultados) < 20 or not nuevos:
+                        break  # no hay más páginas útiles en este punto
         except requests.exceptions.RequestException as e:
             self.error_busqueda = f"Error de conexión con SerpAPI: {e}"
+            print(f"   ❌ {self.error_busqueda}")
+            return []
+        except RuntimeError as e:
+            self.error_busqueda = str(e)
             print(f"   ❌ {self.error_busqueda}")
             return []
         except Exception as e:
@@ -278,24 +300,65 @@ class CazadorLeads:
             traceback.print_exc()
             return []
 
+        print(f"   📊 Negocios reales encontrados: {len(lugares)} ({self.creditos_usados} créditos usados)")
+
+        negocios = []
+        for place in lugares:
+            nombre = place.get("title", "")
+            if not nombre:
+                continue
+            website = place.get("website", "") or ""
+            clase = clasificar_url(website)
+            place_id = place.get("place_id", "")
+            gps = place.get("gps_coordinates") or {}
+            tipo = place.get("type") or ", ".join(place.get("types") or [])
+            negocios.append({
+                "nombre": nombre,
+                "telefono": place.get("phone", ""),
+                "whatsapp": website if clase == "whatsapp" else None,
+                "redes_sociales": website if clase == "red" else None,
+                "email": None,  # SerpAPI/Google Maps no expone emails; nunca se inventa
+                "direccion": place.get("address", ""),
+                "clase_web": clase,
+                # Solo cuenta como web propia una web real (los directorios/redes/WhatsApp no)
+                "tiene_web": clase in ("propia", "business_site"),
+                "url": website,
+                "maps_url": f"https://www.google.com/maps/place/?q=place_id:{place_id}" if place_id else "",
+                "rating": place.get("rating"),
+                "resenas": place.get("reviews"),
+                "tipo": tipo,
+                "horario": place.get("hours") or place.get("operating_hours") or "",
+                "lat": gps.get("latitude"),
+                "lon": gps.get("longitude"),
+            })
+            print(f"      {nombre}: {clase} ({website or 'sin sitio listado'})")
+
+        if not negocios:
+            self.error_busqueda = "Google Maps no retornó negocios para esta búsqueda."
+        return negocios
+
     def filtrar_sin_web(self, resultados):
-        """Filtra solo negocios SIN página web - máximo self.max_results (config. vía MAX_RESULTS en .env)"""
+        """Filtra solo negocios SIN página web - máximo self.max_results (config. vía MAX_RESULTS en .env).
+        Los que ya están guardados se descartan ANTES de cortar, para que repetir una
+        búsqueda no devuelva siempre los mismos."""
         sin_web = [r for r in resultados if not r.get("tiene_web", True)]
+        total_sin_web = len(sin_web)
+        if self.ya_guardado:
+            sin_web = [r for r in sin_web if not self.ya_guardado(r)]
+            print(f"✓ Ya guardados (omitidos): {total_sin_web - len(sin_web)}")
         print(f"\n✓ Total encontrados: {len(resultados)}")
-        print(f"✓ Con web: {len(resultados) - len(sin_web)}")
-        print(f"✓ SIN web (leads): {len(sin_web)}")
+        print(f"✓ Con web: {len(resultados) - total_sin_web}")
+        print(f"✓ SIN web (leads nuevos): {len(sin_web)}")
         return sin_web[:self.max_results]
 
     def extraer_email_contacto(self, negocio):
         """Retorna el email SOLO si viene verificado desde la fuente real.
-        Nunca se inventa ni se adivina un email — Google Maps no expone emails
-        directamente, así que en la práctica esto será casi siempre None."""
+        Nunca se inventa ni se adivina un email."""
         return negocio.get("email") or None
 
     def _telefono_a_whatsapp(self, telefono):
         """Construye un link wa.me a partir de un teléfono REAL verificado en Maps.
-        No es un dato inventado (el teléfono ya es real) pero tampoco está
-        confirmado que ese número use WhatsApp — por eso se marca aparte de un
+        No está confirmado que ese número use WhatsApp, por eso se marca aparte de un
         wa.me que el propio negocio publicó en su ficha."""
         if not telefono or telefono == "N/A":
             return None
@@ -304,83 +367,42 @@ class CazadorLeads:
             return None
         return f"https://wa.me/{digitos}"
 
-    def generar_mensaje_personalizado(self, lead, numero):
-        """Genera un mensaje personalizado para el lead, adaptado al canal de
-        contacto REAL disponible (Google Maps casi nunca expone email para
-        negocios sin web propia):
-          1. WhatsApp — si el negocio publicó un link wa.me/api.whatsapp.com,
-             o si no lo publicó pero sí hay teléfono real (se construye el link
-             wa.me a partir del número — WhatsApp abre igual con cualquier
-             número, publicado o no; se marca como "no confirmado" para que
-             se sepa que no viene directamente de la ficha de Maps)
-          2. Email — si viniera verificado desde la fuente (excepcional)
-          3. Teléfono — como único canal, solo si no hay ningún número utilizable
-        Solo cita datos verificables (nombre, ubicación). No incluye casos de
-        éxito ni estadísticas inventadas."""
-        nombre = lead.get("nombre", "Negocio")
-        telefono = lead.get("telefono") or "N/A"
-        email = self.extraer_email_contacto(lead)
-
-        whatsapp = lead.get("whatsapp")
+    def preparar_lead(self, negocio, numero, escaneo=None, competidores_nombres=None, competidores_con_web=0):
+        """Evalúa las oportunidades del negocio y genera su mensaje (ángulo principal,
+        canal real disponible). Devuelve el lead listo para guardar/mostrar."""
+        telefono = negocio.get("telefono") or "N/A"
+        whatsapp = negocio.get("whatsapp")
         whatsapp_confirmado = bool(whatsapp)
         if not whatsapp:
             whatsapp = self._telefono_a_whatsapp(telefono)
+        email = self.extraer_email_contacto(negocio)
 
-        canal = "whatsapp" if whatsapp else ("email" if email else "telefono")
+        neg = dict(negocio, nicho=self.nicho, ciudad=self.ciudad, competidores_con_web=competidores_con_web)
+        ev = evaluar(neg, escaneo)
 
-        # Datos de remitente: deben configurarse en .env. Si no están configurados,
-        # se usan placeholders explícitos en vez de inventar una identidad o agencia.
-        remitente_nombre = os.getenv("REMITENTE_NOMBRE") or "[TU NOMBRE]"
-        remitente_cargo = os.getenv("REMITENTE_CARGO") or "[TU CARGO]"
-        agencia_nombre = os.getenv("AGENCIA_NOMBRE") or "[TU AGENCIA]"
-        remitente_contacto = os.getenv("REMITENTE_CONTACTO") or "[TU EMAIL / TELÉFONO]"
-
-        asunto = None
-
-        if canal == "whatsapp":
-            cuerpo = f"""Hola! 👋
-
-Vi que {nombre} aparece en Google Maps pero sin página web propia.
-
-Cada mes hay personas que buscan en Google, no encuentran una web y terminan yendo con la competencia.
-
-En {agencia_nombre} ayudamos a negocios como el tuyo a conseguir más clientes con desarrollo web.
-
-¿Tienes 5 minutos esta semana para contarte cómo?
-
-{remitente_nombre} — {agencia_nombre}
-{remitente_contacto}"""
-        else:
-            asunto = f"{nombre}: sin web = clientes que pierden cada mes"
-            cuerpo = f"""Hola,
-
-vi que aparecen en Google Maps pero sin página web propia.
-
-Cada mes hay personas que los buscan en Google, no encuentran una web y terminan en la competencia.
-
-En {agencia_nombre} trabajamos con {self.nicho} ayudándoles a captar más clientes desde búsquedas de Google, a través de desarrollo web.
-
-¿Tiene sentido explorar si aplica a vuestro caso?
-¿Tienes 20 minutos esta semana?
-
-{remitente_nombre}
-{remitente_cargo} — {agencia_nombre}
-{remitente_contacto}"""
-
-        return {
-            "numero": numero,
-            "nombre": nombre,
-            "telefono": telefono,
-            "whatsapp": whatsapp,
-            "whatsapp_confirmado": whatsapp_confirmado,
-            "redes_sociales": lead.get("redes_sociales"),
+        lead = {
+            "numero": numero, "nombre": negocio["nombre"], "telefono": telefono, "whatsapp": whatsapp,
+            "whatsapp_confirmado": whatsapp_confirmado, "redes_sociales": negocio.get("redes_sociales"),
             "email": email or "No disponible (Google Maps no lo publica — verificar manualmente)",
-            "canal_recomendado": canal,
-            "direccion": lead.get("direccion") or "N/A",
-            "maps_url": lead.get("maps_url", ""),
-            "asunto": asunto,
-            "cuerpo": cuerpo
+            "email_real": email, "direccion": negocio.get("direccion") or "N/A",
+            "maps_url": negocio.get("maps_url", ""), "rating": negocio.get("rating"),
+            "resenas": negocio.get("resenas"), "tipo": negocio.get("tipo"), "lat": negocio.get("lat"),
+            "lon": negocio.get("lon"), "web_url": negocio.get("url") or "", "tiene_web": negocio.get("tiene_web"),
+            "competidores": competidores_con_web, "oportunidades": ev["oportunidades"],
+            "diagnostico": ev["diagnostico"], "score": ev["score"], "prioridad": ev["prioridad"],
+            "ticket": ev["ticket"], "nicho": self.nicho, "ciudad": self.ciudad, "pais": self.pais,
         }
+        msg = self.generar_mensaje_personalizado(dict(
+            lead, competidores_nombres=competidores_nombres or [],
+            telefono=telefono if telefono != "N/A" else "", email=email,
+            clave=negocio["nombre"] + self.ciudad))
+        lead.update(canal_recomendado=msg["canal"], asunto=msg["asunto"], cuerpo=msg["cuerpo"],
+                    plantilla=msg["plantilla"], angulo=msg["angulo"])
+        return lead
+
+    def generar_mensaje_personalizado(self, lead, numero=None, paso=0):
+        """Mensaje para el ángulo principal del lead usando solo datos reales (ver mensajes.py)."""
+        return mensajes.construir(lead, paso=paso)
 
     def ejecutar(self):
         """Ejecuta el flujo completo"""
@@ -408,8 +430,11 @@ En {agencia_nombre} trabajamos con {self.nicho} ayudándoles a captar más clien
         # 4. Generar mensajes personalizados (WhatsApp/email/teléfono según lo real disponible)
         print("\n📧 Generando mensajes personalizados...")
         emails_generados = []
+        con_web = [r for r in resultados if r.get("tiene_web")]
+        nombres_comp = [r["nombre"] for r in sorted(con_web, key=lambda r: -(r.get("resenas") or 0))][:2]
         for i, lead in enumerate(self.leads, 1):
-            email_data = self.generar_mensaje_personalizado(lead, i)
+            email_data = self.preparar_lead(lead, i, competidores_nombres=nombres_comp,
+                                            competidores_con_web=len(con_web))
             emails_generados.append(email_data)
             print(f"   ✓ Lead {i}: {lead['nombre']} (canal: {email_data['canal_recomendado']})")
 
