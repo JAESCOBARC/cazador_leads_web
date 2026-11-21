@@ -128,7 +128,7 @@ def buscar_perfiles(nombre, ciudad, cache=None):
             r.raise_for_status()
             data = r.json()
         except requests.RequestException as e:
-            raise RedesError(f"Error de conexión con SerpAPI: {e}") from e
+            raise RedesError(f"Error de conexión con SerpAPI: {escaner.ocultar_clave(e)}") from e
         if "error" in data and "hasn't returned any results" not in str(data["error"]):
             raise RedesError(f"SerpAPI: {data['error']}")
         data = {"organic_results": data.get("organic_results") or []}

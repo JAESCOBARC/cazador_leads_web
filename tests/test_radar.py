@@ -716,3 +716,130 @@ def test_lote_sin_candidatos(cliente, monkeypatch):
     r = cliente.post("/api/redes/lote", headers=H, json={"max_creditos": 5})
     assert r.status_code == 400 and "No hay leads" in r.get_json()["error"]
     assert cliente.get("/api/redes/lote/noexiste").status_code == 404
+
+
+# ------------------------------------------------------------------ consumo de créditos y datos del panel
+
+def test_ocultar_clave_en_errores():
+    msg = "HTTPSConnectionPool(host='serpapi.com'): Max retries exceeded with url: /search?engine=google&q=x&api_key=SECRETA123&num=6 (Caused by X)"
+    limpio = escaner.ocultar_clave(msg)
+    assert "SECRETA123" not in limpio and "api_key=***" in limpio and "num=6" in limpio
+
+
+def test_error_de_conexion_no_filtra_la_clave(monkeypatch):
+    os.environ["SERPAPI_KEY"] = "CLAVE-SECRETA-XYZ"
+
+    def falla(*a, **k):
+        raise redes.requests.ConnectionError("Max retries exceeded with url: /search?q=x&api_key=CLAVE-SECRETA-XYZ")
+
+    monkeypatch.setattr(redes.requests, "get", falla)
+    with pytest.raises(redes.RedesError) as e:
+        redes.buscar_perfiles("Vet X", "Cali")
+    assert "CLAVE-SECRETA-XYZ" not in str(e.value)
+    os.environ["SERPAPI_KEY"] = "clave-falsa"
+
+
+def test_radar_registra_creditos_y_ahorro_por_cache(cliente, monkeypatch):
+    import db
+    from cazador_leads import CazadorLeads
+    from sqlalchemy import select as _sel
+
+    def falso(self, paginas=None, puntos=1, cache=None, progreso=None):
+        self.geo = {"lat": 6.0, "lon": 6.0, "display_name": "X"}
+        self.creditos_usados = 2
+        self.consultas_cache = 3
+        return [dict(NEGOCIOS_FALSOS[0], nombre="Negocio Consumo", telefono="+57 316 555 0001")]
+
+    monkeypatch.setattr(CazadorLeads, "buscar_en_google", falso)
+    r = cliente.post("/api/radar", headers=H, json={"ciudad": "Neiva", "pais": "Colombia", "sectores": ["abogados"], "cobertura": "rapida"})
+    assert esperar(cliente, r.get_json()["job_id"])["estado"] == "listo"
+    with db.engine.connect() as conn:
+        filas = conn.execute(_sel(db.consumo).where(db.consumo.c.ciudad == "Neiva")).mappings().all()
+    assert len(filas) == 1
+    f = filas[0]
+    assert (f["tipo"], f["creditos"], f["ahorrados"], f["sector"]) == ("radar", 2, 3, "abogados") and f["usuario_id"]
+
+
+def test_registrar_consumo_ignora_cero_y_nunca_rompe(monkeypatch):
+    import db
+    from sqlalchemy import select as _sel, func as _f
+    with db.engine.connect() as conn:
+        antes = conn.execute(_sel(_f.count()).select_from(db.consumo)).scalar()
+    db.registrar_consumo("radar", 0, 0)
+    with db.engine.connect() as conn:
+        assert conn.execute(_sel(_f.count()).select_from(db.consumo)).scalar() == antes
+    monkeypatch.setattr(db.engine, "begin", lambda: (_ for _ in ()).throw(RuntimeError("bd caída")))
+    db.registrar_consumo("radar", 5, 0)  # no lanza
+
+
+def test_lead_a_lead_registra_consumo_de_redes(cliente, monkeypatch):
+    import db
+    from sqlalchemy import select as _sel
+    lid = cliente.get("/api/leads").get_json()["leads"][0]["id"]
+    monkeypatch.setattr(redes, "buscar_perfiles", lambda n, c, cache=None: {
+        "perfiles": [], "emails": [], "whatsapps": [], "telefonos": [], "creditos": 1})
+    assert cliente.post(f"/api/leads/{lid}/redes", headers=H).status_code == 200
+    monkeypatch.setattr(redes, "buscar_perfiles", lambda n, c, cache=None: {
+        "perfiles": [], "emails": [], "whatsapps": [], "telefonos": [], "creditos": 0})
+    assert cliente.post(f"/api/leads/{lid}/redes", headers=H).status_code == 200
+    with db.engine.connect() as conn:
+        filas = conn.execute(_sel(db.consumo).where(db.consumo.c.lead_id == lid).order_by(db.consumo.c.id)).mappings().all()
+    assert [(f["tipo"], f["creditos"], f["ahorrados"]) for f in filas] == [("redes", 1, 0), ("redes", 0, 1)]
+
+
+def test_datos_del_panel(cliente):
+    d = cliente.get("/api/analitica/datos").get_json()
+    assert d["config"]["cuota_mes"] >= 1 and len(d["config"]["hoy"]) == 10
+    assert d["leads"] and d["consumo"] and d["eventos"]
+    l = d["leads"][0]
+    for k in ("id", "creado", "estado", "usuario", "sector", "ciudad", "prioridad", "score", "oportunidades", "plantilla"):
+        assert k in l
+    assert isinstance(l["oportunidades"], list) and "0" in d["usuarios"]
+    assert {c["tipo"] for c in d["consumo"]} <= {"radar", "redes"}
+    assert cliente.get("/api/analitica/datos").status_code == 200
+
+
+def test_cuenta_serpapi_no_filtra_la_clave_y_se_cachea(cliente, monkeypatch):
+    import app as aplicacion
+    os.environ["SERPAPI_KEY"] = "CLAVE-SECRETA-XYZ"
+    aplicacion._cuenta.update(t=0.0, d=None)
+    llamadas = []
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"plan_name": "Free", "searches_per_month": 100, "this_month_usage": 37, "total_searches_left": 63}
+
+    monkeypatch.setattr(aplicacion.requests, "get", lambda *a, **k: (llamadas.append(1), R())[1])
+    d = cliente.get("/api/serpapi/cuenta").get_json()
+    assert d == {"disponible": True, "plan": "Free", "cuota": 100, "usadas": 37, "restantes": 63}
+    cliente.get("/api/serpapi/cuenta")
+    assert len(llamadas) == 1  # caché de 5 minutos
+
+    aplicacion._cuenta.update(t=0.0, d=None)
+
+    def falla(*a, **k):
+        raise aplicacion.requests.ConnectionError("url con api_key=CLAVE-SECRETA-XYZ")
+
+    monkeypatch.setattr(aplicacion.requests, "get", falla)
+    texto = cliente.get("/api/serpapi/cuenta").get_data(as_text=True)
+    assert "CLAVE-SECRETA-XYZ" not in texto and '"disponible":false' in texto.replace(" ", "")
+    os.environ["SERPAPI_KEY"] = "clave-falsa"
+    aplicacion._cuenta.update(t=0.0, d=None)
+
+
+def test_exportar_consumo_csv(cliente):
+    r = cliente.get("/api/consumo.csv")
+    assert r.status_code == 200 and "text/csv" in r.content_type
+    assert "Créditos usados" in r.get_data(as_text=True)
+
+
+def test_la_pagina_carga_el_panel_y_sus_recursos(cliente):
+    html = cliente.get("/").get_data(as_text=True)
+    for recurso in ("analitica.css", "analitica.js", "echarts@5.5.1", "maplibre-gl@4.7.1"):
+        assert recurso in html, recurso
+    assert cliente.get("/static/analitica.js").status_code == 200
+    assert cliente.get("/static/analitica.css").status_code == 200
+    js = cliente.get("/static/analitica.js").get_data(as_text=True)
+    assert "innerHTML" in js and "textContent" in js
+    # las etiquetas de datos (ciudad, sector, nombre) nunca se insertan sin escapar en el DOM
+    assert "esc(" in js and "window.Analitica" in js

@@ -64,6 +64,11 @@ _AGENDA = ("clinic", "clínic", "odontol", "dentist", "peluquer", "barber", "spa
            "estétic", "veterinari", "psicolog", "psicólog", "fisioterap", "gimnasio", "restaurant")
 
 
+def ocultar_clave(texto):
+    """Los errores de `requests` incluyen la URL completa (con api_key=...). Nunca deben mostrarse tal cual."""
+    return re.sub(r"(api_key=)[^&\s'\")]+", r"\1***", str(texto))
+
+
 def _norm(t):
     t = unicodedata.normalize("NFD", (t or "").lower())
     return "".join(c for c in t if unicodedata.category(c) != "Mn")

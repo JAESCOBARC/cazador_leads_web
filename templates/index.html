@@ -7,6 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.5'%3E%3Crect width='24' height='24' rx='4' fill='%23172B45'/%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Ccircle cx='12' cy='12' r='1' fill='white'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='analitica.css') }}">
 </head>
 <body>
     <!-- Iconos Lucide (ISC) incrustados -->
@@ -205,8 +206,8 @@
         <!-- ============ ANALÍTICA ============ -->
         <section class="vista" id="vista-analitica" aria-labelledby="h-analitica">
             <header class="pagina-cab">
-                <h1 id="h-analitica">Analítica</h1>
-                <p>Cómo avanza tu prospección: contactos, respuestas y cierres</p>
+                <h1 id="h-analitica">Panel analítico</h1>
+                <p>Consumo de búsquedas mes a mes y rendimiento comercial. Filtra o haz clic en cualquier gráfico: todo el panel se recalcula.</p>
             </header>
             <div class="aviso error" id="errorAnalitica" role="alert"></div>
             <div id="analiticaCont"></div>
@@ -427,6 +428,8 @@
     </dialog>
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script src="{{ url_for('static', filename='analitica.js') }}"></script>
     <script>
     // ------------------------------------------------------------ utilidades
     const ESTADOS = {
@@ -493,6 +496,7 @@
         });
         if (location.hash !== '#' + vista) history.replaceState(null, '', '#' + vista);
         window.scrollTo(0, 0);
+        document.body.classList.toggle('ancho', vista === 'analitica');
         if (vista === 'buscar') setTimeout(() => { iniciarMapa(); if (mapa) mapa.resize(); }, 60);
         if (vista === 'leads') cargarLeads();
         if (vista === 'analitica') cargarAnalitica();
@@ -526,7 +530,7 @@
     };
     const TICKET = { alto: 'High ticket', medio: 'Medium ticket', bajo: 'Low ticket' };
     const PRIO = { alta: '🔥 Alta', media: 'Media', baja: 'Baja' };
-    const COLOR_PRIO = { alta: '#E11D74', media: '#E58A00', baja: '#5B6F99' };
+    const COLOR_PRIO = { alta: '#E11D74', media: '#E58A00', baja: '#6250d6' };
     const ESTILO_MAPA = 'https://tiles.openfreemap.org/styles/liberty';
     let SECTORES = [], COBERTURAS = {}, SEL = new Set();
     let RADAR = { leads: [], sectores: [], sector: '', opp: '' };
@@ -1240,71 +1244,8 @@
         setTimeout(() => span.textContent = 'Copiar mensaje', 1800);
     });
 
-    // ------------------------------------------------------------ ANALÍTICA
-    function barras(items, clase) {
-        const max = Math.max(1, ...items.map(i => i.valor));
-        return `<div class="barras">${items.map(i => `
-            <div class="barra-fila">
-                <span title="${escapeHtml(i.etiqueta)}">${escapeHtml(i.etiqueta)}</span>
-                <div class="barra-pista"><div class="barra-rell ${i.clase || clase || ''}" style="width:${(100 * i.valor / max).toFixed(1)}%"></div></div>
-                <span class="barra-val">${i.valor}</span>
-            </div>`).join('')}</div>`;
-    }
-    function tablaGrupo(titulo, filas, vacioTxt) {
-        const cuerpo = filas.length ? `<div class="tabla-wrap" style="box-shadow:none"><table>
-            <thead><tr><th>${titulo}</th><th class="num">Leads</th><th class="num">Contactados</th><th class="num">Respondieron</th><th class="num">Cierres</th><th class="num">% resp.</th></tr></thead>
-            <tbody>${filas.map(f => `<tr><td>${escapeHtml(f.nombre)}</td><td class="num">${f.total}</td><td class="num">${f.contactados}</td><td class="num">${f.respondieron}</td><td class="num">${f.cerrados}</td><td class="num">${f.tasa_respuesta}%</td></tr>`).join('')}</tbody>
-            </table></div>` : `<p class="muted">${vacioTxt}</p>`;
-        return `<h2 class="seccion-titulo">${titulo}</h2>${cuerpo}`;
-    }
-
-    async function cargarAnalitica() {
-        ocultar($('errorAnalitica'));
-        try {
-            const a = await api('/api/analitica');
-            const t = a.totales;
-            if (!t.leads) {
-                $('analiticaCont').innerHTML = vacio('Aún no hay datos', 'Cuando guardes leads y marques contactos, verás aquí tus métricas.');
-                return;
-            }
-            const colorEstado = { nuevo: 'gris', contactado: '', respondio: '', reunion: '', cerrado: 'exito', descartado: 'rojo' };
-            const semMax = Math.max(1, ...a.por_semana.map(s => s.total));
-            $('analiticaCont').innerHTML = `
-                <div class="kpis">
-                    <div class="kpi"><div class="kpi-label">Leads guardados</div><div class="kpi-valor">${t.leads}</div></div>
-                    <div class="kpi"><div class="kpi-label">Contactados</div><div class="kpi-valor">${t.contactados}</div><div class="kpi-nota">${t.tasa_contacto}% de los leads</div></div>
-                    <div class="kpi"><div class="kpi-label">Respondieron</div><div class="kpi-valor">${t.respondieron}</div><div class="kpi-nota">${t.tasa_respuesta}% de los contactados</div></div>
-                    <div class="kpi"><div class="kpi-label">Cierres</div><div class="kpi-valor">${t.cerrados}</div><div class="kpi-nota">${t.tasa_cierre}% de los contactados</div></div>
-                    <div class="kpi"><div class="kpi-label">Seguimientos vencidos</div><div class="kpi-valor">${t.seguimientos_pendientes}</div>
-                        <div class="kpi-nota">${t.seguimientos_pendientes ? '<a href="#leads" id="verSeg">Ver leads</a>' : 'Todo al día'}</div></div>
-                </div>
-                <div class="grid-2">
-                    <div class="card"><h3>Embudo por estado</h3>
-                        ${barras(a.embudo.map(e => ({ etiqueta: ESTADOS[e.estado].txt, valor: e.total, clase: colorEstado[e.estado] })))}
-                    </div>
-                    <div class="card"><h3>Contactados por semana (últimas 8)</h3>
-                        <div class="semanas" role="img" aria-label="Contactos por semana">${a.por_semana.map(s => `
-                            <div class="semana"><span class="semana-val">${s.total}</span>
-                            <div class="semana-barra" style="height:${(100 * s.total / semMax * 0.8).toFixed(1)}%"></div>
-                            <span>${fmtFecha(s.semana).slice(0, 6)}</span></div>`).join('')}</div>
-                    </div>
-                </div>
-                ${a.por_canal.length ? `<div class="grid-2"><div class="card"><h3>Contactados por canal</h3>
-                    ${barras(a.por_canal.map(c => ({ etiqueta: CANALES[c.nombre] || c.nombre, valor: c.contactados })))}</div>
-                    <div class="card"><h3>Respondieron por canal</h3>
-                    ${barras(a.por_canal.map(c => ({ etiqueta: CANALES[c.nombre] || c.nombre, valor: c.respondieron, clase: 'exito' })))}</div></div>` : ''}
-                ${tablaGrupo('Por tipo de oportunidad', a.por_oportunidad, '')}
-                ${tablaGrupo('Por prioridad', a.por_prioridad, '')}
-                ${tablaGrupo('Por plantilla de mensaje (A/B)', a.por_plantilla, '')}
-                ${tablaGrupo('Por usuario', a.por_usuario, '')}
-                ${tablaGrupo('Por nicho', a.por_nicho, '')}
-                ${tablaGrupo('Por ciudad', a.por_ciudad, '')}`;
-            const ver = $('verSeg');
-            if (ver) ver.addEventListener('click', (e) => { e.preventDefault(); $('fSeg').checked = true; irA('leads'); });
-        } catch (e) {
-            aviso($('errorAnalitica'), 'error', e.message);
-        }
-    }
+    // ------------------------------------------------------------ ANALÍTICA (static/analitica.js)
+    function cargarAnalitica() { if (window.Analitica) window.Analitica.cargar(); }
 
     // ------------------------------------------------------------ USUARIOS
     async function cargarUsuarios() {

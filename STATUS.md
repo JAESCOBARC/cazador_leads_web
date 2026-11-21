@@ -8,6 +8,7 @@
 - **Escáner de oportunidades** (`escaner.py`): sin web, web débil, sin medición para Ads, web que no capta, SEO local, reputación y app de gestión (hipótesis). Ver tabla en `CLAUDE.md`.
 - **Email y WhatsApp** leídos de la web del negocio (portada, contacto, aviso legal), con su fuente; nunca inventados.
 - **Instagram/Facebook:** lectura gratuita de la bio del perfil enlazado en Maps y búsqueda opcional en Google por lead (1 crédito) para email/WhatsApp/teléfono publicados; botón «Perfil» para verificar.
+- **Panel analítico tipo cuadro de mando** (ECharts): consumo de créditos mes a mes con cuota, proyección y ahorro por caché; KPIs con variación vs periodo anterior; embudo, actividad semanal, calidad, oportunidades, mapa de calor ciudad×sector, rendimiento, plantillas A/B y listas accionables; filtros cruzados, tooltips y vista de tabla.
 - **Lote de redes:** busca Instagram/Facebook de los leads nuevos sin email por prioridad, con tope de créditos; sin IA.
 - **Mapa 3D** (MapLibre): inclinado, con flechas de cámara, pines-flecha y columnas por puntuación; viaja a la ciudad escrita.
 - **Score y prioridad** por lead; ticket estimado por sector; mapa con puntos por prioridad.

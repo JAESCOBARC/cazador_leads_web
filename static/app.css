@@ -458,7 +458,7 @@ dialog::backdrop { background: rgba(23,43,69,.45); }
 }
 .mapa-leyenda span { display: inline-flex; align-items: center; gap: 5px; }
 .mapa-leyenda .d { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.mapa-leyenda .d-alta { background: #E11D74; } .mapa-leyenda .d-media { background: #E58A00; } .mapa-leyenda .d-baja { background: #5B6F99; }
+.mapa-leyenda .d-alta { background: #E11D74; } .mapa-leyenda .d-media { background: #E58A00; } .mapa-leyenda .d-baja { background: #6250d6; }
 .mapa-leyenda em { color: var(--lav); font-style: normal; }
 /* Marcador en forma de flecha: la punta señala el negocio */
 .pin {
@@ -474,7 +474,7 @@ dialog::backdrop { background: rgba(23,43,69,.45); }
     content: ""; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
     border-left: 9px solid transparent; border-right: 9px solid transparent; border-top: 13px solid var(--c);
 }
-.pin-alta { --c: #E11D74; } .pin-media { --c: #E58A00; } .pin-baja { --c: #5B6F99; }
+.pin-alta { --c: #E11D74; } .pin-media { --c: #E58A00; } .pin-baja { --c: #6250d6; }
 
 .radar-form { display: grid; gap: var(--s3); margin-top: var(--s3); }
 .radar-form label { display: block; font-size: .8rem; font-weight: 600; color: var(--lav); margin-bottom: 4px; }
@@ -534,7 +534,7 @@ dialog::backdrop { background: rgba(23,43,69,.45); }
 .prio { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: .75rem; font-weight: 700; }
 .prio-alta { background: #FFE4EE; color: #BE185D; }
 .prio-media { background: var(--aviso-f); color: var(--aviso-t); }
-.prio-baja { background: #EEF2F7; color: #475569; }
+.prio-baja { background: #ECE9FB; color: #4A3CB5; }
 .score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--texto); }
 .estrellas { color: #B45309; font-weight: 600; font-size: .85rem; }
 .lead-card.resaltado { border-color: var(--azul); box-shadow: 0 0 0 3px rgba(23,105,170,.25); }

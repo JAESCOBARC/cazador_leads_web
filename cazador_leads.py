@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import mensajes
-from escaner import clasificar_url, evaluar
+from escaner import clasificar_url, evaluar, ocultar_clave
 
 try:
     import requests
@@ -52,6 +52,7 @@ class CazadorLeads:
         self.error_busqueda = None
         self.advertencias = []
         self.creditos_usados = 0
+        self.consultas_cache = 0  # consultas servidas desde la caché (crédito ahorrado)
         self.geo = None
         self.ya_guardado = None  # función opcional: negocio -> bool (omite leads ya guardados)
 
@@ -189,6 +190,7 @@ class CazadorLeads:
         if cache is not None:
             guardado = cache.get(clave)
             if guardado:
+                self.consultas_cache += 1
                 return json.loads(guardado), True
         params = {"engine": "google_maps", "type": "search", "q": query,
                   "ll": f"@{lat},{lon},14z", "api_key": serpapi_key}
@@ -220,6 +222,7 @@ class CazadorLeads:
         self.error_busqueda = None
         self.advertencias = []
         self.creditos_usados = 0
+        self.consultas_cache = 0
         query = self.nicho.strip()
         if paginas is None:
             try:
@@ -270,7 +273,7 @@ class CazadorLeads:
                     except (requests.exceptions.RequestException, RuntimeError) as e:
                         if not lugares:
                             raise
-                        self.advertencias.append(f"Una consulta falló y se devuelven resultados parciales: {e}")
+                        self.advertencias.append(f"Una consulta falló y se devuelven resultados parciales: {ocultar_clave(e)}")
                         break
                     resultados = data.get("local_results") or []
                     if not resultados and data.get("place_results"):
@@ -286,11 +289,11 @@ class CazadorLeads:
                     if len(resultados) < 20 or not nuevos:
                         break  # no hay más páginas útiles en este punto
         except requests.exceptions.RequestException as e:
-            self.error_busqueda = f"Error de conexión con SerpAPI: {e}"
+            self.error_busqueda = f"Error de conexión con SerpAPI: {ocultar_clave(e)}"
             print(f"   ❌ {self.error_busqueda}")
             return []
         except RuntimeError as e:
-            self.error_busqueda = str(e)
+            self.error_busqueda = ocultar_clave(e)
             print(f"   ❌ {self.error_busqueda}")
             return []
         except Exception as e:

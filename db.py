@@ -118,6 +118,37 @@ cache_busqueda = Table(
 )
 
 
+# Créditos de SerpAPI consumidos por esta app (y los ahorrados gracias a la caché), para el panel mensual.
+consumo = Table(
+    'consumo', metadata,
+    Column('id', Integer, primary_key=True),
+    Column('fecha', DateTime, nullable=False, default=ahora),
+    Column('tipo', String(20), nullable=False),          # radar | redes
+    Column('creditos', Integer, nullable=False, default=0),
+    Column('ahorrados', Integer, nullable=False, default=0),
+    Column('usuario_id', Integer, ForeignKey('usuarios.id')),
+    Column('ciudad', String(120)),
+    Column('sector', String(120)),
+    Column('lead_id', Integer),
+    Column('detalle', String(255)),
+)
+
+
+def registrar_consumo(tipo, creditos, ahorrados=0, usuario_id=None, ciudad=None, sector=None,
+                      lead_id=None, detalle=None):
+    """Anota un consumo. Nunca debe romper la operación principal si falla."""
+    if not creditos and not ahorrados:
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(insert(consumo).values(
+                fecha=ahora(), tipo=tipo, creditos=int(creditos or 0), ahorrados=int(ahorrados or 0),
+                usuario_id=usuario_id, ciudad=(ciudad or '')[:120], sector=(sector or '')[:120],
+                lead_id=lead_id, detalle=(detalle or '')[:255]))
+    except Exception as e:  # noqa: BLE001
+        print(f"[CONSUMO] No se pudo registrar: {e}")
+
+
 def init_db():
     metadata.create_all(engine)
     _migrar()

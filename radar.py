@@ -105,6 +105,8 @@ def _ejecutar(job, ciudad, pais, sectores, cobertura, analizar_webs):
             _set(job, f"Escaneando {nicho} en {ciudad}…", base)
             negocios = cz.buscar_en_google(paginas=paginas, puntos=puntos, cache=cache, progreso=prog)
             creditos += cz.creditos_usados
+            db.registrar_consumo('radar', cz.creditos_usados, cz.consultas_cache, job['user_id'],
+                                 ciudad, nicho, detalle=f'cobertura {cobertura}')
             advertencias += cz.advertencias
             if negocios:
                 grupos.append((cz, negocios))
@@ -332,7 +334,7 @@ def candidatos_redes(prioridad=None, limite=200):
     """Leads nuevos, sin email y sin búsqueda de redes previa; primero los de mayor puntuación."""
     L = db.leads
     with db.engine.connect() as conn:
-        return conn.execute(select(L.c.id, L.c.nombre, L.c.ciudad).where(*_cond_candidatos_redes(prioridad))
+        return conn.execute(select(L.c.id, L.c.nombre, L.c.ciudad, L.c.nicho).where(*_cond_candidatos_redes(prioridad))
                             .order_by(func.coalesce(L.c.score, 0).desc(), L.c.id).limit(limite)).all()
 
 
@@ -379,6 +381,8 @@ def _ejecutar_lote(job, prioridad, max_creditos):
                 continue
             fallos_seguidos = 0
             usados += res["creditos"]
+            db.registrar_consumo('redes', res["creditos"], 0 if res["creditos"] else 1, job['user_id'],
+                                 c.ciudad, c.nicho, c.id, 'lote')
             aplicar_redes(c.id, res)
             st["procesados"] += 1
             st["con_email"] += bool(res["emails"])

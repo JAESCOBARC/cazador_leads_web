@@ -12,6 +12,8 @@ services:
         value: "20"
       - key: MAX_SCAN_WEBS
         value: "40"
+      - key: SERPAPI_CUOTA_MES
+        value: "100"
       - key: LOTE_MAX_CREDITOS
         value: "50"
       - key: CASO_EXITO

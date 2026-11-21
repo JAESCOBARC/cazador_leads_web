@@ -11,6 +11,8 @@ import io
 import json
 import secrets
 import time
+
+import requests
 from datetime import date, timedelta
 from functools import wraps
 
@@ -404,6 +406,8 @@ def buscar_redes(lead_id):
     except redes.RedesError as e:
         return jsonify({'error': str(e)}), 502
 
+    db.registrar_consumo('redes', res['creditos'], 0 if res['creditos'] else 1, request.user['id'],
+                         r['ciudad'], r['nicho'], lead_id, 'manual')
     radar.aplicar_redes(lead_id, res)
     out = detalle_lead(lead_id).get_json()
     out['redes_resultado'] = res
@@ -559,6 +563,97 @@ def analitica():
         'por_usuario': por_usuario,
         'por_semana': [{'semana': s.isoformat(), 'total': conteo[s]} for s in semanas],
     })
+
+
+# ---------------------------------------------------------------- Panel analítico
+
+CUOTA_MES = max(1, int(os.environ.get('SERPAPI_CUOTA_MES', '100') or 100))
+_cuenta = {'t': 0.0, 'd': None}
+
+
+def _dt(v):
+    return v.isoformat() if v else None
+
+
+@app.route('/api/analitica/datos')
+def analitica_datos():
+    """Registros compactos para que el panel filtre y recalcule en el navegador (filtros cruzados)."""
+    L = db.leads
+    with db.engine.connect() as conn:
+        nombres = _nombres_usuarios(conn)
+        leads_ = conn.execute(select(
+            L.c.id, L.c.nombre, L.c.creado_en, L.c.estado, L.c.contactado_en, L.c.canal_contacto, L.c.asignado_a,
+            L.c.nicho, L.c.ciudad, L.c.prioridad, L.c.score, L.c.ticket, L.c.oportunidades, L.c.plantilla, L.c.email,
+            L.c.rating, L.c.resenas, L.c.proximo_seguimiento
+        ).order_by(L.c.id.desc()).limit(5000)).mappings().all()
+        eventos = conn.execute(select(db.contactos.c.lead_id, db.contactos.c.estado, db.contactos.c.fecha,
+                                      db.contactos.c.usuario_id, db.contactos.c.canal)
+                               .order_by(db.contactos.c.id.desc()).limit(30000)).all()
+        consumo_ = conn.execute(select(db.consumo).order_by(db.consumo.c.id.desc()).limit(30000)).mappings().all()
+
+    def tipos(v):
+        return [o.get('tipo') for o in _json(v, []) if isinstance(o, dict)]
+
+    usuarios_ = dict(nombres)
+    usuarios_[0] = 'Sin asignar'
+    return jsonify({
+        'leads': [{
+            'id': r['id'], 'nombre': r['nombre'], 'creado': _dt(r['creado_en']), 'estado': r['estado'],
+            'contactado': _dt(r['contactado_en']), 'canal': r['canal_contacto'], 'usuario': r['asignado_a'] or 0,
+            'sector': r['nicho'] or '—', 'ciudad': r['ciudad'] or '—', 'prioridad': r['prioridad'] or 'baja',
+            'score': r['score'] or 0, 'ticket': r['ticket'], 'oportunidades': tipos(r['oportunidades']),
+            'plantilla': r['plantilla'] or '', 'email': bool(r['email']), 'rating': r['rating'],
+            'resenas': r['resenas'], 'seguimiento': _iso(r['proximo_seguimiento'])} for r in leads_],
+        'eventos': [{'lead': e.lead_id, 'estado': e.estado, 'fecha': _dt(e.fecha), 'usuario': e.usuario_id or 0,
+                     'canal': e.canal} for e in eventos],
+        'consumo': [{'fecha': _dt(c['fecha']), 'tipo': c['tipo'], 'creditos': c['creditos'],
+                     'ahorrados': c['ahorrados'], 'usuario': c['usuario_id'] or 0,
+                     'ciudad': c['ciudad'] or '—', 'sector': c['sector'] or '—'} for c in consumo_],
+        'usuarios': {str(k): v for k, v in usuarios_.items()},
+        'config': {'cuota_mes': CUOTA_MES, 'hoy': date.today().isoformat()},
+    })
+
+
+@app.route('/api/serpapi/cuenta')
+def serpapi_cuenta():
+    """Estado real de la cuenta de SerpAPI. Su API de cuenta no consume créditos; se cachea 5 minutos."""
+    if time.time() - _cuenta['t'] < 300 and _cuenta['d'] is not None:
+        return jsonify(_cuenta['d'])
+    key = os.environ.get('SERPAPI_KEY', '')
+    if not key or key == 'tu_api_key_aqui':
+        return jsonify({'disponible': False, 'motivo': 'SERPAPI_KEY no configurada'})
+    try:
+        r = requests.get('https://serpapi.com/account', params={'api_key': key}, timeout=10)
+        r.raise_for_status()
+        d = r.json()
+        out = {'disponible': True, 'plan': d.get('plan_name'), 'cuota': d.get('searches_per_month'),
+               'usadas': d.get('this_month_usage'), 'restantes': d.get('total_searches_left')}
+    except (requests.RequestException, ValueError):
+        # No se devuelve el texto del error: incluiría la URL con la clave
+        out = {'disponible': False, 'motivo': 'No se pudo consultar la cuenta de SerpAPI'}
+    _cuenta.update(t=time.time(), d=out)
+    return jsonify(out)
+
+
+@app.route('/api/consumo.csv')
+def exportar_consumo():
+    with db.engine.connect() as conn:
+        nombres = _nombres_usuarios(conn)
+        rows = conn.execute(select(db.consumo).order_by(db.consumo.c.id)).mappings().all()
+
+    def seguro(v):
+        v = '' if v is None else str(v)
+        return "'" + v if v[:1] in ('=', '+', '-', '@', '\t', '\r') else v
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['Fecha (UTC)', 'Tipo', 'Créditos usados', 'Créditos ahorrados (caché)', 'Usuario', 'Ciudad',
+                'Sector', 'Detalle'])
+    for r in rows:
+        w.writerow([seguro(x) for x in (_dt(r['fecha']), r['tipo'], r['creditos'], r['ahorrados'],
+                                        nombres.get(r['usuario_id'], ''), r['ciudad'], r['sector'], r['detalle'])])
+    return Response('\ufeff' + buf.getvalue(), mimetype='text/csv; charset=utf-8',
+                    headers={'Content-Disposition': 'attachment; filename=consumo_serpapi.csv'})
 
 
 # ---------------------------------------------------------------- Usuarios
