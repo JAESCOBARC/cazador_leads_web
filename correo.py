@@ -15,6 +15,7 @@ Los errores que se muestran al usuario nunca incluyen contraseñas ni claves.
 import os
 import re
 import smtplib
+import socket
 import ssl
 from email.message import EmailMessage
 
@@ -65,6 +66,28 @@ def configurado():
     return bool(proveedor() and destinatarios())
 
 
+def _conectar_ipv4(self, host, puerto, timeout):
+    """Conecta solo por IPv4: muchos hostings (Render) no tienen salida IPv6 y falla con «Network is unreachable»."""
+    ultimo = None
+    for fam, tipo, proto, _, dir_ in socket.getaddrinfo(host, puerto, socket.AF_INET, socket.SOCK_STREAM):
+        try:
+            return socket.create_connection(dir_[:2], timeout)
+        except OSError as e:
+            ultimo = e
+    raise ultimo or OSError(f"No se pudo resolver {host} por IPv4")
+
+
+class _SMTP4(smtplib.SMTP):
+    def _get_socket(self, host, puerto, timeout):
+        return _conectar_ipv4(self, host, puerto, timeout)
+
+
+class _SMTPSSL4(smtplib.SMTP_SSL):
+    def _get_socket(self, host, puerto, timeout):
+        s = _conectar_ipv4(self, host, puerto, timeout)
+        return self.context.wrap_socket(s, server_hostname=self._host)
+
+
 def _smtp(msg):
     host = ajustes.obtener("SMTP_HOST").strip()
     try:
@@ -74,7 +97,7 @@ def _smtp(msg):
     seguridad = (os.getenv("SMTP_SEGURIDAD") or ("ssl" if puerto == 465 else "starttls")).strip().lower()
     ctx = ssl.create_default_context()
     try:
-        conexion = smtplib.SMTP_SSL(host, puerto, timeout=15, context=ctx) if seguridad == "ssl" else smtplib.SMTP(host, puerto, timeout=15)
+        conexion = _SMTPSSL4(host, puerto, timeout=15, context=ctx) if seguridad == "ssl" else _SMTP4(host, puerto, timeout=15)
         with conexion as s:
             if seguridad == "starttls":
                 s.starttls(context=ctx)
@@ -86,7 +109,11 @@ def _smtp(msg):
         raise CorreoError("El servidor de correo rechazó el usuario o la contraseña "
                           "(en Gmail hace falta una «contraseña de aplicación», no tu contraseña normal)") from e
     except (smtplib.SMTPException, OSError) as e:
-        raise CorreoError(f"No se pudo enviar por SMTP: {limpiar(e)}") from e
+        extra = ""
+        if isinstance(e, OSError) and not isinstance(e, smtplib.SMTPException):
+            extra = (" Tu servidor no puede conectar con el correo: si la app está en Render gratis, bloquea los puertos SMTP "
+                     "(25, 465, 587). Usa Resend (API) en Ajustes → Correo, o un plan de pago de Render.")
+        raise CorreoError(f"No se pudo enviar por SMTP: {limpiar(e)}.{extra}") from e
 
 
 def _resend(asunto, texto, html, destinos, reply_to=None):
