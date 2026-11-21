@@ -1680,3 +1680,77 @@ def test_correo_con_imagen_por_smtp_de_punta_a_punta(contacto_limpio, sin_correo
     assert "text/plain" in tipos and "text/html" in tipos and "image/png" in tipos and "multipart/related" in tipos
     png = next(p for p in msg.walk() if p.get_content_type() == "image/png")
     assert png["Content-ID"] == "<firma-1@x>" and png.get_payload(decode=True) == PNG_1x1
+
+
+# ---- llamada a la acción (enlaces de agenda y WhatsApp) y URL de la web en el CSV
+@pytest.fixture
+def cta_limpio(contacto_limpio):
+    import ajustes
+    import db
+
+    def vaciar():
+        with db.engine.begin() as conn:
+            conn.execute(db.ajustes.delete().where(db.ajustes.c.clave.like("CTA_%")))
+        ajustes.invalidar()
+    vaciar()
+    yield
+    vaciar()
+
+
+def test_cta_sin_enlaces_el_mensaje_sale_como_antes(cta_limpio, cliente):
+    lid = _crear_lead(nombre="Negocio Sin Cta", email="sincta@negocio.co")
+    m = cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&variante=a&canal=email&paso=0").get_json()
+    assert "{cta}" not in m["cuerpo"] and "http" not in m["cuerpo"] and "¿Tienes 20 minutos esta semana?" in m["cuerpo"]
+
+
+def test_cta_guarda_enlaces_y_aparecen_en_los_tres_pasos(cta_limpio, cliente, cliente_laura):
+    assert cliente_laura.put("/api/contacto/cta", headers=H, json={}).status_code == 403
+    r = cliente.put("/api/contacto/cta", headers=H, json={"agenda": "https://cal.com/jhony/llamada", "whatsapp": "+57 300 123 4567"})
+    assert r.status_code == 200
+    c = r.get_json()["cta"]
+    assert c["agenda"] == "https://cal.com/jhony/llamada" and c["whatsapp"] == "https://wa.me/573001234567"
+    lid = _crear_lead(nombre="Negocio Con Cta", email="concta@negocio.co")
+    for paso in (0, 1, 2):
+        m = cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&variante=a&canal=email&paso={paso}").get_json()
+        assert "https://cal.com/jhony/llamada" in m["cuerpo"] and "https://wa.me/573001234567" in m["cuerpo"], paso
+    wa = cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&variante=a&canal=whatsapp&paso=0").get_json()["cuerpo"]
+    assert "https://cal.com/jhony/llamada" in wa and "wa.me" not in wa                                   # en WhatsApp solo la agenda
+    v = cliente.post("/api/contacto/cta/vista-previa", headers=H, json={"agenda": "https://cal.com/x/y", "whatsapp": ""}).get_json()
+    assert "https://cal.com/x/y" in v["email"] and "WhatsApp" not in v["email"]                          # la línea sin enlace se omite
+
+
+def test_cta_rechaza_enlaces_peligrosos_y_variables_inventadas(cta_limpio, cliente):
+    put = lambda **kw: cliente.put("/api/contacto/cta", headers=H, json=kw)  # noqa: E731
+    for malo in ("javascript:alert(1)", "http://cal.com/x", "https://127.0.0.1/x", "https://user:clave@cal.com/x",
+                 "https://cal.com/x y", "https://cal.com/x\"onmouseover=1", "ftp://cal.com/x", "https://localhost/x"):
+        assert put(agenda=malo).status_code == 400, malo
+    assert put(whatsapp="12345").status_code == 400
+    assert put(whatsapp="https://evil.com/573001234567").status_code == 400
+    assert put(texto_email="Reserva: {inventada}").status_code == 400
+    assert put(texto_email="Reserva <b>aquí</b>: {enlace_agenda}").status_code == 400
+    assert put(whatsapp="https://wa.me/573001234567").status_code == 200
+    # {cta} no vale en el asunto
+    assert cliente.put("/api/contacto/plantillas/sin_web:0:a", headers=H, json={"asunto": "Mira {cta}", "cuerpo": "Hola {nombre} texto largo de sobra"}).status_code == 400
+
+
+def test_cta_en_el_html_del_correo_solo_enlaza_los_enlaces_propios():
+    import correo
+    h = correo.html_propuesta("Hola\n\nReserva: https://cal.com/a?x=1&y=2 y https://otra.com/z", "Baja", enlaces=["https://cal.com/a?x=1&y=2"])
+    assert '<a href="https://cal.com/a?x=1&amp;y=2"' in h
+    assert "<a href=\"https://otra.com" not in h
+
+
+def test_csv_incluye_la_url_de_la_web_solo_si_tiene(cliente):
+    import csv as _csv
+    import io
+    import db
+    from sqlalchemy import insert as _ins
+    with db.engine.begin() as conn:
+        for nombre, web, tiene in (("Con Web Csv", "https://conweb.co", True), ("Solo Red Csv", "https://instagram.com/solored", False)):
+            conn.execute(_ins(db.leads).values(clave=f"csv-{nombre}", nombre=nombre, ciudad="Cali", nicho="abogados", pais="Colombia", estado="nuevo",
+                                                creado_en=db.ahora(), actualizado_en=db.ahora(), web_url=web, tiene_web=tiene))
+    filas = list(_csv.DictReader(io.StringIO(cliente.get("/api/leads.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    a = next(f for f in filas if f["Nombre"] == "Con Web Csv")
+    b = next(f for f in filas if f["Nombre"] == "Solo Red Csv")
+    assert a["Tiene web"] == "Sí" and a["URL de la web"] == "https://conweb.co" and a["Otro enlace de Maps (red, directorio)"] == ""
+    assert b["Tiene web"] == "No" and b["URL de la web"] == "" and b["Otro enlace de Maps (red, directorio)"] == "https://instagram.com/solored"

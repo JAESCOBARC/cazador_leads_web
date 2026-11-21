@@ -137,11 +137,20 @@ def _resend(asunto, texto, html, destinos, reply_to=None, imagenes=None):
         raise CorreoError(f"Resend rechazó el envío ({r.status_code}): {limpiar(detalle) or 'sin detalle'}")
 
 
-def html_propuesta(cuerpo, baja, imagen=None, aviso=None):
+def html_propuesta(cuerpo, baja, imagen=None, aviso=None, enlaces=None):
     """HTML sencillo de una propuesta: el texto tal cual (escapado), la imagen de firma incrustada (cid:) y la línea de baja.
-    Todo lo que viene del usuario o del negocio se escapa: nunca se interpreta como HTML."""
+    Todo lo que viene del usuario o del negocio se escapa: nunca se interpreta como HTML.
+    enlaces: URLs https del propio remitente (agenda, WhatsApp) que se vuelven clicables; ninguna otra URL lo hace."""
     esc = lambda t: _html.escape(t, quote=True)  # noqa: E731
-    parrafos = "".join(f'<p style="margin:0 0 14px">{esc(p).replace(chr(10), "<br>")}</p>' for p in cuerpo.split("\n\n") if p.strip())
+
+    def parrafo(p):
+        t = esc(p)
+        for u in sorted({u for u in (enlaces or []) if u.startswith("https://")}, key=len, reverse=True):
+            e = esc(u)
+            t = t.replace(e, f'<a href="{e}" style="color:#1769aa">{e}</a>')
+        return t.replace(chr(10), "<br>")
+
+    parrafos = "".join(f'<p style="margin:0 0 14px">{parrafo(p)}</p>' for p in cuerpo.split("\n\n") if p.strip())
     img = ""
     if imagen:
         img = (f'<p style="margin:18px 0 0"><img src="cid:{imagen["cid"]}" width="{int(imagen["ancho"])}" alt="{esc(imagen.get("alt") or "Firma")}" '

@@ -453,7 +453,8 @@ def _enviar_propuesta(asunto, cuerpo, destinos, aviso=None):
     if not img:
         return correo.enviar(asunto, texto, destinos=destinos, reply_to=reply_to)
     cid = 'firma-' + secrets.token_hex(8) + '@cazadorleads'
-    html = correo.html_propuesta(cuerpo, _baja_envio(), {'cid': cid, 'ancho': img['ancho'], 'alt': ajustes.obtener('AGENCIA_NOMBRE').strip() or 'Firma'}, aviso)
+    html = correo.html_propuesta(cuerpo, _baja_envio(), {'cid': cid, 'ancho': img['ancho'], 'alt': ajustes.obtener('AGENCIA_NOMBRE').strip() or 'Firma'}, aviso,
+                                 [u for u in plantillas.cta_enlaces().values() if u])
     return correo.enviar(asunto, texto, html, destinos=destinos, reply_to=reply_to,
                          imagenes=[{'cid': cid, 'datos': bytes(img['contenido']), 'tipo': img['tipo'], 'nombre': 'firma'}])
 
@@ -551,7 +552,31 @@ def _estado_contacto():
         'plantillas': plantillas.estado(),
         'max_palabras': mensajes.MAX_PALABRAS,
         'imagen': plantillas.imagen_info(),
+        'cta': plantillas.cta_estado(),
     }
+
+
+@app.route('/api/contacto/cta', methods=['PUT'])
+@solo_admin
+def contacto_cta_guardar():
+    try:
+        plantillas.cta_guardar(request.get_json(silent=True) or {}, request.user['id'])
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 400
+    print(f"[CONTACTO] {request.user['usuario']} modificó los enlaces de la llamada a la acción")
+    return jsonify(_estado_contacto())
+
+
+@app.route('/api/contacto/cta/vista-previa', methods=['POST'])
+@solo_admin
+def contacto_cta_vista():
+    try:
+        r = plantillas.cta_vista_previa(request.get_json(silent=True) or {},
+                                        {'nombre': 'Clínica Dental Sol', 'agencia': ajustes.obtener('AGENCIA_NOMBRE') or '[TU AGENCIA]',
+                                         'remitente': ajustes.obtener('REMITENTE_NOMBRE') or '[TU NOMBRE]'})
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify(r)
 
 
 @app.route('/api/contacto')
@@ -736,13 +761,15 @@ def exportar_csv():
     w = csv.writer(buf)
     w.writerow(['Nombre', 'Teléfono', 'Email', 'Dirección', 'Nicho', 'Ciudad', 'País', 'Estado',
                 'Canal contacto', 'Asignado a', 'Contactado', 'Próximo seguimiento', 'Notas',
-                'Prioridad', 'Score', 'Oportunidades', 'Web', 'Rating', 'Reseñas'])
+                'Prioridad', 'Score', 'Oportunidades', 'Tiene web', 'URL de la web', 'Otro enlace de Maps (red, directorio)',
+                'Rating', 'Reseñas'])
     for r in rows:
         w.writerow([seguro(x) for x in (
             r['nombre'], r['telefono'], r['email'], r['direccion'], r['nicho'], r['ciudad'], r['pais'],
             r['estado'], r['canal_contacto'], nombres.get(r['asignado_a'], ''),
             _iso(r['contactado_en']), _iso(r['proximo_seguimiento']), r['notas'], r['prioridad'], r['score'],
-            ', '.join(o['titulo'] for o in _json(r['oportunidades'], [])), r['web_url'], r['rating'],
+            ', '.join(o['titulo'] for o in _json(r['oportunidades'], [])), 'Sí' if r['tiene_web'] else 'No',
+            r['web_url'] if r['tiene_web'] else '', '' if r['tiene_web'] else r['web_url'], r['rating'],
             r['resenas'])])
     return Response('﻿' + buf.getvalue(), mimetype='text/csv; charset=utf-8',
                     headers={'Content-Disposition': 'attachment; filename=leads.csv'})

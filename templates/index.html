@@ -586,6 +586,10 @@
     let mapa = null, mapaListo = false, marcadores = [], timerRadar = null, orbita = null;
 
     const urlRed = (u) => /^https:\/\/([a-z0-9-]+\.)*(instagram|facebook)\.com\//i.test(u || '');
+    // Web propia del negocio (solo si Maps la lista y no es una red o un directorio). Solo http(s): nunca otro esquema.
+    const urlWeb = (l) => (l.tiene_web && /^https?:\/\/[^\s<>"']+$/i.test(l.web_url || '')) ? l.web_url : '';
+    const textoUrl = (u) => u.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '');
+    const enlaceWeb = (l) => { const u = urlWeb(l); return u ? `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer">${escapeHtml(textoUrl(u))}</a>` : ''; };
 
     function tagOpp(o) {
         const d = OPP[o.tipo] || { txt: o.titulo, cls: 'opp-gris' };
@@ -884,6 +888,7 @@
             <div class="lead-info">
                 <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(l.telefono) || '—'}</span></div>
                 <div class="info-item"><span class="info-label">Email</span><span class="info-value">${l.email ? `<a href="mailto:${escapeHtml(l.email)}">${escapeHtml(l.email)}</a>` : '—'}</span></div>
+                <div class="info-item ancho"><span class="info-label">Web</span><span class="info-value">${enlaceWeb(l) || '<span class="muted">Sin web propia</span>'}</span></div>
                 <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(l.direccion) || '—'}</span></div>
             </div>
             <div class="lead-acciones">
@@ -1014,6 +1019,7 @@
             const vencido = l.proximo_seguimiento && l.proximo_seguimiento <= hoy && ['contactado', 'respondio'].includes(l.estado);
             return `<tr>
                 <td><span class="nombre-lead">${escapeHtml(l.nombre)}</span><span class="sub">${escapeHtml(l.nicho)} · ${escapeHtml(l.ciudad)}</span>
+                    ${urlWeb(l) ? `<span class="sub">${enlaceWeb(l)}</span>` : ''}
                     ${l.oportunidades.length ? `<div class="opps" style="margin:4px 0 0">${l.oportunidades.slice(0, 3).map(tagOpp).join('')}</div>` : ''}</td>
                 <td>${l.prioridad ? `<span class="prio prio-${escapeHtml(l.prioridad)}">${PRIO[l.prioridad]}</span><span class="sub score">${l.score}</span>` : '<span class="muted">—</span>'}</td>
                 <td>${escapeHtml(l.telefono) || '<span class="muted">—</span>'}</td>
@@ -1129,6 +1135,7 @@
         $('dlgInfo').innerHTML = `<div class="lead-info">
             <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(l.telefono) || '—'}</span></div>
             <div class="info-item"><span class="info-label">Email</span><span class="info-value">${escapeHtml(l.email) || '—'}</span></div>
+            <div class="info-item ancho"><span class="info-label">Web</span><span class="info-value">${enlaceWeb(l) || '<span class="muted">Sin web propia</span>'}</span></div>
             <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(l.direccion) || '—'}</span></div>
         </div>`;
 

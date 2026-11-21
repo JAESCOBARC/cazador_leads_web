@@ -68,6 +68,10 @@ En el menú **Contacto** (solo administradores) editas cada texto: por ángulo, 
 - Con imagen, el correo sale en HTML con la imagen incrustada y siempre con la versión de texto. Usa «Enviarme una prueba» en un lead para verlo en tu bandeja antes de escribir a un cliente.
 - Si usas **Resend**, la imagen va como adjunto incrustado (`content_id`). Compruébalo con la prueba: si tu bandeja no la muestra, quita la imagen y avísame.
 
+### Enlaces de agenda y WhatsApp (pestaña «Enlaces y CTA»)
+
+Escribe el enlace de tu agenda (Calendly, Cal.com…, con https://) y tu WhatsApp (número con indicativo, p. ej. +57 300 123 4567, o tu enlace wa.me). Se añaden donde el texto del mensaje lleve `{cta}`, que ya está en los textos originales. Si no configuras nada, los mensajes salen igual que antes. En los emails con imagen de firma los enlaces son clicables; sin imagen, el correo es de texto y tu lector de correo suele convertirlos en enlaces. Usa «Enviarme una prueba» para verlo.
+
 ## Variables de entorno (opcionales)
 
 Siguen funcionando como respaldo: `SERPAPI_KEY`, `SERPAPI_CUOTA_MES`, `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CLAVE`, `RESEND_API_KEY`, `EMAIL_REMITENTE`, `EMAIL_RESPONDER_A`, `ALERTA_EMAIL_DESTINO`, `ALERTA_UMBRALES`, `ENVIO_MAX_DIA`, `REMITENTE_NOMBRE`, `REMITENTE_CARGO`, `AGENCIA_NOMBRE`, `REMITENTE_CONTACTO`, `CASO_EXITO`. Imprescindibles en Render: `SECRET_KEY`, `DATABASE_URL`, `ADMIN_USER` y `ADMIN_PASSWORD`.

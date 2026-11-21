@@ -50,10 +50,15 @@ VARIABLES = {
     "contacto": ("Tu email o teléfono de contacto", "laura@estudionorte.co"),
     "caso": ("Tu caso de éxito, si lo definiste (vacío si no)", "Un caso reciente: una clínica de Cali pasó de 4 a 15 citas."),
     "asunto_inicial": ("Asunto del mensaje inicial (solo en el asunto de los seguimientos)", "Clínica Dental Sol: sin web = clientes que se van"),
+    "cta": ("Tu llamada a la acción (pestaña «Enlaces y CTA»): agenda y WhatsApp. Vacía si no configuraste enlaces", "Reserva aquí: https://cal.com/tu-nombre"),
+    "enlace_agenda": ("Tu enlace de agenda de llamadas (vacío si no lo configuraste)", "https://cal.com/tu-nombre"),
+    "enlace_whatsapp": ("Tu enlace de WhatsApp (vacío si no lo configuraste)", "https://wa.me/573001234567"),
 }
+# Variables que no tienen sentido en el asunto
+SOLO_CUERPO = ("cta", "enlace_agenda", "enlace_whatsapp")
 
 _QUIEN = "En {agencia} trabajamos con {nicho} ayudándoles a conseguir más clientes."
-_CIERRE0 = "¿Tiene sentido explorar si aplica a tu caso?\n¿Tienes 20 minutos esta semana?"
+_CIERRE0 = "¿Tiene sentido explorar si aplica a tu caso?\n¿Tienes 20 minutos esta semana?\n{cta}"
 
 # ángulo -> (apertura A, apertura B, impacto, propuesta, asunto A, asunto B, dato nuevo del seguimiento)
 _ORIGINAL = {
@@ -113,13 +118,13 @@ def _construir_originales():
         for var, ap, asu in (("a", ap_a, asu_a), ("b", ap_b, asu_b)):
             d[f"{ang}:0:{var}"] = {"asunto": asu, "cuerpo": f"{ap}\n\n{impacto}\n\n{_QUIEN} {propuesta}\n\n{{caso}}\n\n{_CIERRE0}"}
         d[f"{ang}:1:a"] = {"asunto": "Re: {asunto_inicial}",
-                           "cuerpo": f"Te escribí hace unos días sobre {{servicio}} para {{nombre}}. {extra}\n\n¿Lo vemos 15 minutos esta semana?"}
+                           "cuerpo": f"Te escribí hace unos días sobre {{servicio}} para {{nombre}}. {extra}\n\n¿Lo vemos 15 minutos esta semana?\n{{cta}}"}
         d[f"{ang}:1:b"] = {"asunto": "Re: {asunto_inicial}",
-                           "cuerpo": f"Retomo mi mensaje sobre {{servicio}} para {{nombre}}. {extra}\n\n¿Te va bien una llamada de 15 minutos esta semana?"}
+                           "cuerpo": f"Retomo mi mensaje sobre {{servicio}} para {{nombre}}. {extra}\n\n¿Te va bien una llamada de 15 minutos esta semana?\n{{cta}}"}
         d[f"{ang}:2:a"] = {"asunto": "Re: {asunto_inicial}",
-                           "cuerpo": "Último mensaje sobre {servicio} para {nombre}. Si ahora no es prioridad, sin problema: si más adelante te sirve, aquí estoy."}
+                           "cuerpo": "Último mensaje sobre {servicio} para {nombre}. Si ahora no es prioridad, sin problema: si más adelante te sirve, aquí estoy.\n\n{cta}"}
         d[f"{ang}:2:b"] = {"asunto": "Re: {asunto_inicial}",
-                           "cuerpo": "Cierro aquí lo de {servicio} para {nombre}. Si ahora no es el momento, sin problema; si más adelante te interesa, escríbeme y lo retomamos."}
+                           "cuerpo": "Cierro aquí lo de {servicio} para {nombre}. Si ahora no es el momento, sin problema; si más adelante te interesa, escríbeme y lo retomamos.\n\n{cta}"}
     d["global:saludo_email"] = {"asunto": None, "cuerpo": "Hola,"}
     d["global:saludo_whatsapp"] = {"asunto": None, "cuerpo": "*Hola {nombre}*"}
     d["global:firma_email"] = {"asunto": None, "cuerpo": "{remitente}\n{cargo} — {agencia}\n{contacto}"}
@@ -184,6 +189,8 @@ def validar(clave, asunto, cuerpo):
                 raise PlantillaError(f"La variable {{{nombre}}} del {donde} no existe. Usa solo las de la lista.")
             if nombre == "asunto_inicial" and not (donde == "asunto" and not clave.split(":")[1] == "0"):
                 raise PlantillaError("{asunto_inicial} solo se puede usar en el asunto de los seguimientos y del cierre")
+            if nombre in SOLO_CUERPO and donde == "asunto":
+                raise PlantillaError(f"{{{nombre}}} solo se puede usar en el mensaje, no en el asunto")
         if re.search(r"[<>]", texto):
             raise PlantillaError(f"El {donde} no puede llevar < ni >: los correos salen como texto")
     return asunto, cuerpo
@@ -253,6 +260,104 @@ def restaurar(clave):
     with db.engine.begin() as conn:
         conn.execute(delete(db.plantillas_msg).where(db.plantillas_msg.c.clave == clave))
     invalidar()
+
+
+# ------------------------------------------------------------------ llamada a la acción (enlaces de agenda y WhatsApp)
+# Los enlaces y los textos se guardan en «ajustes» (claves CTA_*). {cta} = el texto del canal con los enlaces ya puestos.
+CTA_DEFECTO = {
+    "email": "Reserva aquí un rato conmigo: {enlace_agenda}\nO escríbeme por WhatsApp: {enlace_whatsapp}",
+    "whatsapp": "Reserva aquí un rato conmigo: {enlace_agenda}",
+}
+CTA_VARIABLES = ("enlace_agenda", "enlace_whatsapp", "nombre", "agencia", "remitente")
+_CTA_CLAVES = {"agenda": "CTA_AGENDA_URL", "whatsapp": "CTA_WHATSAPP", "texto_email": "CTA_TEXTO_EMAIL", "texto_whatsapp": "CTA_TEXTO_WHATSAPP"}
+
+
+def _ajustes():
+    import ajustes
+    return ajustes
+
+
+def cta_enlaces():
+    """Enlaces configurados y válidos: {'agenda': url|'', 'whatsapp': url|''}. Un valor dañado se ignora."""
+    aj = _ajustes()
+    out = {}
+    for k, norm in (("agenda", aj.normalizar_url), ("whatsapp", aj.normalizar_whatsapp)):
+        try:
+            v = (aj.obtener(_CTA_CLAVES[k]) or "").strip()
+            out[k] = norm(v) if v else ""
+        except aj.AjusteError:
+            out[k] = ""
+    return out
+
+
+def _texto_cta(canal):
+    t = (_ajustes().obtener(_CTA_CLAVES["texto_whatsapp" if canal == "whatsapp" else "texto_email"]) or "").strip()
+    return t or CTA_DEFECTO["whatsapp" if canal == "whatsapp" else "email"]
+
+
+def validar_texto_cta(texto, et="El texto"):
+    for m in _LLAVES.finditer(texto):
+        if m.group(1) not in CTA_VARIABLES:
+            raise PlantillaError(f"La variable {{{m.group(1)}}} no se puede usar aquí. Disponibles: " + ", ".join("{" + v + "}" for v in CTA_VARIABLES))
+    if re.search(r"[<>]", texto):
+        raise PlantillaError(f"«{et}» no puede llevar < ni >: los correos salen como texto")
+
+
+def render_cta(canal, valores=None, enlaces=None, texto=None):
+    """Texto de la llamada a la acción. Una línea que menciona un enlace que no configuraste se omite entera;
+    sin ningún enlace queda vacío y el mensaje sale como antes."""
+    enlaces = cta_enlaces() if enlaces is None else enlaces
+    vals = dict(valores or {}, enlace_agenda=enlaces.get("agenda", ""), enlace_whatsapp=enlaces.get("whatsapp", ""))
+    lineas = []
+    for ln in (texto if texto is not None else _texto_cta(canal)).replace("\r", "").split("\n"):
+        usadas = _VAR.findall(ln)
+        if any(u in vals and not vals[u] for u in usadas):
+            continue
+        r = re.sub(r"[ \t]+", " ", _VAR.sub(lambda m: str(vals.get(m.group(1), m.group(0))), ln)).strip()
+        if r:
+            lineas.append(r)
+    return "\n".join(lineas)
+
+
+def cta_estado():
+    aj = _ajustes()
+    en = cta_enlaces()
+    return {"agenda": en["agenda"], "whatsapp": en["whatsapp"],
+            "texto_email": (aj.obtener("CTA_TEXTO_EMAIL") or "").strip(), "texto_whatsapp": (aj.obtener("CTA_TEXTO_WHATSAPP") or "").strip(),
+            "defecto_email": CTA_DEFECTO["email"], "defecto_whatsapp": CTA_DEFECTO["whatsapp"], "variables": list(CTA_VARIABLES)}
+
+
+def cta_normalizar(d):
+    """Valida lo que escribió el usuario y devuelve los cuatro valores normalizados ('' = sin valor). Lanza PlantillaError."""
+    aj = _ajustes()
+    out = {}
+    for k, clave in _CTA_CLAVES.items():
+        campo = next(c for c in aj.CAMPOS if c["clave"] == clave)
+        try:
+            out[k] = aj.validar(campo, (d or {}).get(k))
+        except aj.AjusteError as e:
+            raise PlantillaError(str(e)) from e
+    for k in ("texto_email", "texto_whatsapp"):
+        if out[k]:
+            validar_texto_cta(out[k], "Texto en el email" if k == "texto_email" else "Texto en WhatsApp")
+    return out
+
+
+def cta_guardar(d, usuario_id=None):
+    out = cta_normalizar(d)
+    aj = _ajustes()
+    try:
+        aj.guardar({_CTA_CLAVES[k]: v for k, v in out.items()}, usuario_id=usuario_id)
+    except aj.AjusteError as e:
+        raise PlantillaError(str(e)) from e
+
+
+def cta_vista_previa(d, valores=None):
+    out = cta_normalizar(d)
+    en = {"agenda": out["agenda"], "whatsapp": out["whatsapp"]}
+    return {"agenda": out["agenda"], "whatsapp": out["whatsapp"],
+            "email": render_cta("email", valores, en, out["texto_email"] or CTA_DEFECTO["email"]),
+            "whatsapp_texto": render_cta("whatsapp", valores, en, out["texto_whatsapp"] or CTA_DEFECTO["whatsapp"])}
 
 
 # ------------------------------------------------------------------ imagen de firma

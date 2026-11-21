@@ -76,6 +76,11 @@ CAMPOS = [
     dict(clave="REMITENTE_CONTACTO", grupo="remitente", tipo="texto", etiqueta="Email o teléfono de contacto"),
     dict(clave="CASO_EXITO", grupo="remitente", tipo="largo", etiqueta="Caso de éxito real (opcional)",
          ayuda="Una frase con un resultado verdadero, p. ej. «una clínica de Cali pasó de 4 a 15 citas por semana». Si lo dejas vacío no se inventa ninguno."),
+    # Llamada a la acción: se editan en el módulo Contacto (pestaña «Enlaces y CTA»), no en la pantalla de Ajustes.
+    dict(clave="CTA_AGENDA_URL", grupo="cta", tipo="url", etiqueta="Enlace de tu agenda de llamadas"),
+    dict(clave="CTA_WHATSAPP", grupo="cta", tipo="whatsapp", etiqueta="Tu WhatsApp"),
+    dict(clave="CTA_TEXTO_EMAIL", grupo="cta", tipo="multilinea", etiqueta="Texto de la llamada a la acción en el email"),
+    dict(clave="CTA_TEXTO_WHATSAPP", grupo="cta", tipo="multilinea", etiqueta="Texto de la llamada a la acción en WhatsApp"),
 ]
 _IDX = {c["clave"]: c for c in CAMPOS}
 
@@ -185,14 +190,62 @@ def _host_publico(host):
             raise AjusteError("El servidor SMTP apunta a una dirección interna: no está permitido")
 
 
+def normalizar_url(v, et="El enlace", hosts=None):
+    """Solo https, con un dominio normal (nada de IP, usuario:clave@, puertos raros ni caracteres que rompan un correo)."""
+    from urllib.parse import urlsplit
+    v = v.strip()
+    if len(v) > 200:
+        raise AjusteError(f"«{et}» es demasiado largo (máximo 200 caracteres)")
+    if re.search(r"[\s<>\"'`\\]", v):
+        raise AjusteError(f"«{et}» no puede tener espacios ni comillas")
+    if not v.lower().startswith("https://"):
+        raise AjusteError(f"«{et}» debe empezar por https:// (por seguridad no se admiten otros tipos de enlace)")
+    try:
+        p = urlsplit(v)
+        host, puerto = (p.hostname or ""), p.port
+    except ValueError as e:
+        raise AjusteError(f"«{et}» no es un enlace válido") from e
+    if p.username or p.password or puerto not in (None, 443):
+        raise AjusteError(f"«{et}» no es un enlace válido")
+    if not _HOST.match(host) or "." not in host or re.fullmatch(r"[\d.]+", host):
+        raise AjusteError(f"«{et}» debe usar un nombre de dominio (por ejemplo cal.com), no una dirección IP")
+    if hosts and not any(host == h or host.endswith("." + h) for h in hosts):
+        raise AjusteError(f"«{et}» debe ser un enlace de WhatsApp (wa.me, api.whatsapp.com o wa.link)")
+    return v
+
+
+def normalizar_whatsapp(v, et="Tu WhatsApp"):
+    """Acepta un número (+57 300 123 4567) y lo convierte en https://wa.me/573001234567, o un enlace de WhatsApp."""
+    v = v.strip()
+    if v.lower().startswith("http"):
+        return normalizar_url(v, et, hosts=("wa.me", "api.whatsapp.com", "wa.link"))
+    digitos = re.sub(r"[\s().-]", "", v)
+    if digitos.startswith("+"):
+        digitos = digitos[1:]
+    if not re.fullmatch(r"\d{8,15}", digitos):
+        raise AjusteError(f"«{et}»: escribe el número con el indicativo del país (p. ej. +57 300 123 4567) o pega tu enlace wa.me")
+    return f"https://wa.me/{digitos}"
+
+
 def validar(campo, valor):
     """Devuelve el valor normalizado ('' = sin valor) o lanza AjusteError."""
     et, tipo = campo["etiqueta"], campo["tipo"]
     v = str(valor if valor is not None else "").strip()
     if v == "":
         return ""
+    if tipo == "multilinea":
+        v = v.replace("\r", "")
+        if re.search(r"[\x00-\x09\x0b-\x1f\x7f]", v):
+            raise AjusteError(f"«{et}» no puede tener caracteres de control")
+        if len(v) > 400:
+            raise AjusteError(f"«{et}» es demasiado largo (máximo 400 caracteres)")
+        return v
     if _CONTROL.search(v):
         raise AjusteError(f"«{et}» no puede tener saltos de línea ni caracteres de control")
+    if tipo == "url":
+        return normalizar_url(v, et)
+    if tipo == "whatsapp":
+        return normalizar_whatsapp(v, et)
     limite = 300 if tipo == "largo" else 200
     if len(v) > limite:
         raise AjusteError(f"«{et}» es demasiado largo (máximo {limite} caracteres)")

@@ -217,18 +217,82 @@
                 h('li', { text: 'No se admiten SVG ni WebP (no funcionan en todos los correos).' })));
     }
 
+    // ---------------------------------------------------------------- pestaña: enlaces y CTA
+    function pestanaCta() {
+        const c = E.cta;
+        const msg = h('div', { class: 'aviso', role: 'status' });
+        const agenda = h('input', { type: 'url', id: 'ct-agenda', value: c.agenda, maxlength: '200', autocomplete: 'off', placeholder: 'https://cal.com/tu-nombre/llamada' });
+        const wa = h('input', { type: 'text', id: 'ct-wa', value: c.whatsapp, maxlength: '200', autocomplete: 'off', placeholder: '+57 300 123 4567  ·  o  https://wa.me/573001234567' });
+        const tEmail = h('textarea', { id: 'ct-t-email', rows: '3', maxlength: '400', placeholder: c.defecto_email });
+        const tWa = h('textarea', { id: 'ct-t-wa', rows: '2', maxlength: '400', placeholder: c.defecto_whatsapp });
+        tEmail.value = c.texto_email; tWa.value = c.texto_whatsapp;
+        const pEmail = h('div', { class: 'ct-prev ct-mail' }), pWa = h('div', { class: 'ct-prev ct-wa' });
+        const pie = h('p', { class: 'ayuda' });
+
+        const datos = () => ({ agenda: agenda.value, whatsapp: wa.value, texto_email: tEmail.value, texto_whatsapp: tWa.value });
+        const mostrar = (caja, texto) => { caja.textContent = ''; caja.append(h('div', { class: 'ct-prev-cuerpo', text: texto || '(vacío: este canal no añade ninguna llamada a la acción)' })); };
+        const vista = () => {
+            clearTimeout(temporizador);
+            temporizador = setTimeout(async () => {
+                try {
+                    const d = await llamar('POST', '/api/contacto/cta/vista-previa', datos());
+                    mostrar(pEmail, d.email); mostrar(pWa, d.whatsapp_texto);
+                    pie.textContent = d.whatsapp && !wa.value.trim().toLowerCase().startsWith('https://') ? `Tu WhatsApp quedará como ${d.whatsapp}` : '';
+                    msg.className = 'aviso';
+                } catch (e) { pEmail.textContent = ''; pWa.textContent = ''; pEmail.append(h('div', { class: 'ct-prev-error', text: e.message })); pie.textContent = ''; }
+            }, 350);
+        };
+        [agenda, wa, tEmail, tWa].forEach((el) => { el.addEventListener('input', () => { sinGuardar = true; vista(); }); });
+
+        const guardar = h('button', { type: 'button', class: 'btn btn-primario', text: 'Guardar enlaces y textos' });
+        guardar.addEventListener('click', async () => {
+            guardar.disabled = true;
+            try {
+                E = await llamar('PUT', '/api/contacto/cta', datos());
+                sinGuardar = false; pintar();
+                const a = $id('ct-aviso'); if (a) aviso(a, 'ok', 'Guardado. Los mensajes nuevos ya usan {cta} con estos enlaces.');
+            } catch (e) { aviso(msg, 'error', e.message); } finally { guardar.disabled = false; }
+        });
+        const quitar = h('button', { type: 'button', class: 'btn btn-clear', text: 'Usar los textos por defecto', onclick: () => { tEmail.value = ''; tWa.value = ''; sinGuardar = true; vista(); } });
+        sinGuardar = false; vista();
+
+        return h('div', { class: 'ct-grid' },
+            h('div', { class: 'card' },
+                h('h2', { class: 'card-titulo', text: 'Enlaces para que te contacten' }),
+                h('p', { class: 'ayuda', style: 'margin-bottom:12px', text: 'Se añaden al final de cada mensaje donde aparezca la variable {cta} (los textos originales ya la llevan). Si dejas ambos enlaces vacíos, los mensajes salen como antes.' }),
+                h('div', { class: 'form-group' }, h('label', { for: 'ct-agenda', text: 'Enlace de tu agenda de llamadas' }), agenda,
+                    h('p', { class: 'ayuda', text: 'Calendly, Cal.com, Google Calendar… Debe empezar por https://.' })),
+                h('div', { class: 'form-group' }, h('label', { for: 'ct-wa', text: 'Tu WhatsApp' }), wa,
+                    h('p', { class: 'ayuda', text: 'Escribe solo el número con el indicativo del país y la app crea el enlace wa.me, o pega tu enlace de WhatsApp.' }), pie),
+                h('div', { class: 'form-group' }, h('label', { for: 'ct-t-email', text: 'Texto en los emails' }), tEmail),
+                h('div', { class: 'form-group' }, h('label', { for: 'ct-t-wa', text: 'Texto en los mensajes de WhatsApp' }), tWa,
+                    h('p', { class: 'ayuda', text: 'En WhatsApp no tiene sentido invitar a escribirte por WhatsApp: por defecto solo lleva la agenda.' })),
+                h('p', { class: 'ayuda', text: 'Variables: ' + c.variables.map((v) => '{' + v + '}').join(', ') + '. Una línea que use un enlace que no configuraste se omite sola.' }),
+                h('div', { class: 'aj-acciones' }, guardar, quitar),
+                h('div', { style: 'margin-top:12px' }, msg)),
+            h('div', { class: 'card' },
+                h('h2', { class: 'card-titulo', text: 'Vista previa' }),
+                h('p', { class: 'ayuda', style: 'margin-bottom:10px', text: 'Solo la llamada a la acción, tal como se añade al mensaje. Se actualiza mientras escribes; no se guarda hasta que pulses el botón.' }),
+                h('span', { class: 'ct-etq', text: 'En el email' }), pEmail,
+                h('span', { class: 'ct-etq', style: 'display:block;margin-top:12px', text: 'En WhatsApp' }), pWa,
+                h('ul', { class: 'ct-notas' },
+                    h('li', { text: 'En el email con imagen de firma, los enlaces salen clicables. Sin imagen, el correo es de texto y los lectores de correo suelen convertirlos en enlaces.' }),
+                    h('li', { text: 'Para colocar la llamada a la acción en otro sitio, escribe {cta} en el texto del mensaje (pestaña Mensajes). También puedes usar {enlace_agenda} o {enlace_whatsapp} sueltos.' }),
+                    h('li', { text: 'Los enlaces cuentan para el límite de 150 palabras; el aviso de la pestaña Mensajes los incluye.' }))));
+    }
+
     // ---------------------------------------------------------------- estructura general
     function pintar() {
         const raiz = $id('contactoCont');
         if (!raiz || !E) return;
         raiz.textContent = '';
-        const tabs = [['mensajes', 'Mensajes'], ['globales', 'Saludo y firma'], ['imagen', 'Imagen de firma']];
+        const tabs = [['mensajes', 'Mensajes'], ['cta', 'Enlaces y CTA'], ['globales', 'Saludo y firma'], ['imagen', 'Imagen de firma']];
         raiz.append(
             h('div', { class: 'ct-tabs', role: 'tablist' }, tabs.map(([id, t]) => h('button', {
                 type: 'button', class: 'ct-tab', role: 'tab', 'aria-selected': String(pestana === id),
                 onclick: () => { if (pestana !== id && confirmarCambio()) { pestana = id; pintar(); } } }, t))),
             h('div', { class: 'aviso', id: 'ct-aviso', role: 'status' }),
-            pestana === 'mensajes' ? pestanaMensajes() : pestana === 'globales' ? pestanaGlobales() : pestanaImagen());
+            pestana === 'mensajes' ? pestanaMensajes() : pestana === 'cta' ? pestanaCta() : pestana === 'globales' ? pestanaGlobales() : pestanaImagen());
     }
 
     async function cargar() {

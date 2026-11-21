@@ -69,7 +69,7 @@ def _escaneo(l):
 # Los textos (plantillas.py) se editan en el módulo Contacto; aquí se calculan los datos reales del lead
 # que sustituyen a las {variables}.
 
-def variables(l, angulo="sin_web"):
+def variables(l, angulo="sin_web", canal="email"):
     r = _remitente()
     n, e = l["nombre"], _escaneo(l)
     dom = _dominio(e.get("url_final") or l.get("web_url"))
@@ -95,7 +95,11 @@ def variables(l, angulo="sin_web"):
         medicion = f"revisé la web de {n} ({dom}) y no encontré Google Analytics ni píxel de Meta o de Google Ads."
 
     seo = "; ".join(((l.get("diagnostico") or {}).get("seo_local") or [])[:3]) or "hay aspectos que se pueden mejorar"
+    enlaces = plantillas.cta_enlaces()
+    cta = plantillas.render_cta("email" if canal == "email" else "whatsapp",
+                                {"nombre": n, "agencia": r["agencia"], "remitente": r["nombre"]}, enlaces)
     return {
+        "enlace_agenda": enlaces["agenda"], "enlace_whatsapp": enlaces["whatsapp"], "cta": cta,
         "nombre": n, "nicho": l.get("nicho") or "negocios como el tuyo", "ciudad": l.get("ciudad") or "tu zona", "dominio": dom,
         "datos_maps": datos, "con_datos": f" con {datos}" if datos else "", "competidores": _competidores(l),
         "solo_redes": {"red": "Hoy solo tienen redes sociales.", "directorio": "Hoy solo aparecen en un directorio."}.get(clase, ""),
@@ -156,7 +160,7 @@ def construir(lead, angulo=None, canal=None, paso=0, variante=None, textos=None,
     variante = variante if variante in ("a", "b") else variante_estable(lead.get("clave") or lead["nombre"])
     paso = paso if paso in (0, 1, 2) else 0
     es_wa = canal != "email"
-    vals = variables(lead, angulo)
+    vals = variables(lead, angulo, "whatsapp" if es_wa else "email")
     t = textos or plantillas.obtener(f"{angulo}:{paso}:{variante}")
     g = dict(plantillas.globales(), **(piezas or {}))
 
