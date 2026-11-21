@@ -439,6 +439,41 @@ def _pie_envio():
             'responde «no» y no volveré a escribirte.')
 
 
+_ULTIMA_PRUEBA = {}
+
+
+@app.route('/api/leads/<int:lead_id>/enviar-prueba', methods=['POST'])
+def enviar_prueba_lead(lead_id):
+    """Manda el mensaje tal como lo vería el cliente, pero SOLO a tus propios destinatarios de avisos (nunca al lead).
+    No cuenta en el tope diario, no se registra como envío al cliente y no cambia el estado del lead."""
+    d = request.get_json(silent=True) or {}
+    asunto = re.sub(r'\s+', ' ', str(d.get('asunto') or '')).strip()
+    cuerpo = str(d.get('cuerpo') or '').strip()
+    if not 3 <= len(asunto) <= 190 or not 20 <= len(cuerpo) <= 5000:
+        return jsonify({'error': 'El asunto o el mensaje no tienen una longitud válida'}), 400
+    if not correo.proveedor():
+        return jsonify({'error': 'El envío de correo no está configurado: ve a Ajustes → Correo'}), 400
+    destinos = correo.destinatarios()
+    if not destinos:
+        return jsonify({'error': 'Pon tu email en Ajustes → Correo → destinatarios de los avisos para recibir las pruebas'}), 400
+    with db.engine.connect() as conn:
+        if not conn.execute(select(db.leads.c.id).where(db.leads.c.id == lead_id)).first():
+            return jsonify({'error': 'Lead no encontrado'}), 404
+    ahora = time.time()
+    uid = request.user['id']
+    if ahora - _ULTIMA_PRUEBA.get(uid, 0) < 10:
+        return jsonify({'error': 'Espera unos segundos entre pruebas'}), 429
+    _ULTIMA_PRUEBA[uid] = ahora
+    pendientes = sorted(set(re.findall(r'\[TU [^\]]*\]', asunto + cuerpo)))
+    aviso_prueba = ('[PRUEBA — no se envió al cliente. Así se vería su correo.]\n\n')
+    try:
+        correo.enviar('[PRUEBA] ' + asunto, aviso_prueba + cuerpo + _pie_envio(), destinos=destinos,
+                      reply_to=ajustes.obtener('EMAIL_RESPONDER_A').strip() or None)
+    except correo.CorreoError as e:
+        return jsonify({'error': str(e)}), 502
+    return jsonify({'ok': True, 'destinos': [correo.enmascarar(x) for x in destinos], 'pendientes': pendientes})
+
+
 @app.route('/api/leads/<int:lead_id>/enviar-email', methods=['POST'])
 def enviar_email_lead(lead_id):
     d = request.get_json(silent=True) or {}

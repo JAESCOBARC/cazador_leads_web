@@ -1487,3 +1487,26 @@ def test_migracion_agrega_columnas_nuevas_a_tablas_existentes(tmp_path):
               "print(c.execute('select asunto from envios').fetchone()[0])")
     out = subprocess.run([sys.executable, "-c", codigo], cwd=RAIZ, capture_output=True, text=True)
     assert "OK" in out.stdout and "x" in out.stdout, out.stdout + out.stderr
+
+
+def test_prueba_de_propuesta_solo_llega_a_mi_correo_y_no_toca_el_lead(sin_correo, cliente):
+    import app as aplicacion
+    import db
+    from sqlalchemy import select as _sel
+    mp = sin_correo
+    lid = _crear_lead(nombre="Negocio Prueba Propia", email="cliente.real@negocio.co")
+    url = f"/api/leads/{lid}/enviar-prueba"
+    assert cliente.post(url, json=BODY_OK).status_code == 403                       # CSRF
+    assert cliente.post(url, headers=H, json=BODY_OK).status_code == 400            # correo sin configurar
+    _con_resend(mp); enviados = _capturar(mp)
+    aplicacion._ULTIMA_PRUEBA.clear()
+    assert cliente.post(f"/api/leads/999999/enviar-prueba", headers=H, json=BODY_OK).status_code == 404
+    r = cliente.post(url, headers=H, json=dict(BODY_OK, cuerpo=BODY_OK["cuerpo"] + " Soy [TU NOMBRE]."))
+    assert r.status_code == 200 and r.get_json()["pendientes"] == ["[TU NOMBRE]"]
+    e = enviados[0]
+    assert "cliente.real@negocio.co" not in e["destinos"] and e["destinos"] == ["duena@example.com"]   # nunca al lead
+    assert e["asunto"].startswith("[PRUEBA]") and "responde «no»" in e["texto"]
+    assert cliente.post(url, headers=H, json=BODY_OK).status_code == 429             # frena repeticiones
+    with db.engine.connect() as conn:
+        assert conn.execute(_sel(db.envios).where(db.envios.c.lead_id == lid)).first() is None            # sin historial
+        assert conn.execute(_sel(db.leads.c.estado).where(db.leads.c.id == lid)).scalar() == "nuevo"       # sigue «nuevo»

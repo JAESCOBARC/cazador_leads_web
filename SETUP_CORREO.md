@@ -52,6 +52,7 @@ Un correo cuando el consumo mensual de SerpAPI llega al porcentaje que fijes (80
 
 Botón **Enviar por email** en cada lead con email publicado. Siempre manual:
 
+- **Enviarme una prueba**: antes de escribir al cliente, el botón manda el mismo mensaje (con tu firma y la línea de baja) a **tu propio correo** —el de los avisos en Ajustes → Correo—, nunca al lead. No cuenta en el tope diario, no queda en el historial y no cambia el estado del lead.
 - Un lead a la vez, con **vista previa editable y confirmación**.
 - Solo al **email que el propio negocio publicó** (nunca a una dirección escrita a mano).
 - **Tope diario** (5 por defecto, ajustable) y **una vez cada 24 h por lead**.

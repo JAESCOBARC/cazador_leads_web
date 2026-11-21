@@ -324,6 +324,10 @@
                         <svg class="icono sm" aria-hidden="true"><use href="#i-message"/></svg>
                         <span>Abrir WhatsApp</span>
                     </a>
+                    <button type="button" class="btn btn-clear btn-sm" id="dlgPrueba" hidden title="Te manda este mensaje a tu propio correo, tal como lo vería el cliente. No se envía al lead.">
+                        <svg class="icono sm" aria-hidden="true"><use href="#i-mail"/></svg>
+                        <span>Enviarme una prueba</span>
+                    </button>
                     <button type="button" class="btn btn-clear btn-sm" id="dlgEnviarEmail" hidden>
                         <svg class="icono sm" aria-hidden="true"><use href="#i-mail"/></svg>
                         <span>Enviar por email</span>
@@ -1252,6 +1256,7 @@
         $('dlgCuerpo').textContent = MSG.cuerpo;
         const puedeMail = MSG.canal === 'email' && !!MSG.asunto && !!leadActual.email && CORREO.puede_enviar && !['cerrado', 'descartado'].includes(leadActual.estado);
         $('dlgEnviarEmail').hidden = !puedeMail;
+        $('dlgPrueba').hidden = !(MSG.canal === 'email' && !!MSG.asunto && CORREO.puede_enviar);
         $('dlgCuerpo').contentEditable = puedeMail ? 'true' : 'false';
         $('dlgMsgMeta').textContent = `${MSG.palabras} palabras · ${MSG.toques} envío(s) registrados · plantilla ${MSG.plantilla}` +
             (puedeMail ? ` · puedes editar el texto antes de enviar (${CORREO.limite_dia - CORREO.enviados_hoy} envíos disponibles hoy)` : '');
@@ -1272,6 +1277,20 @@
             await abrirLead(leadActual.id, true);
             if ($('vista-leads').classList.contains('active')) cargarLeads();
             if ($('vista-buscar').classList.contains('active')) marcarEnResultados(leadActual.id, leadActual.estado);
+        } catch (e) { aviso($('dlgError'), 'error', e.message); }
+        finally { btn.disabled = false; }
+    });
+
+    // Prueba: el mismo mensaje, pero solo a tu propio correo (nunca al lead)
+    $('dlgPrueba').addEventListener('click', async () => {
+        if (!MSG || !MSG.asunto) return;
+        const btn = $('dlgPrueba');
+        ocultar($('dlgError'));
+        btn.disabled = true;
+        try {
+            const r = await api(`/api/leads/${leadActual.id}/enviar-prueba`, json('POST', { asunto: MSG.asunto, cuerpo: $('dlgCuerpo').innerText.trim() }));
+            alert(`Prueba enviada a ${r.destinos.join(', ')}. Revisa tu bandeja (y spam).` +
+                (r.pendientes.length ? `\n\nOjo: aún tiene datos por completar: ${r.pendientes.join(', ')}. Complétalos en Ajustes → Remitente y firma.` : ''));
         } catch (e) { aviso($('dlgError'), 'error', e.message); }
         finally { btn.disabled = false; }
     });
