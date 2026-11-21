@@ -12,6 +12,7 @@ import re
 from urllib.parse import urlparse
 
 import ajustes
+import plantillas
 from escaner import OPORTUNIDADES, ORDEN_ANGULOS
 
 MAX_PALABRAS = 150
@@ -64,110 +65,58 @@ def _escaneo(l):
     return (l.get("diagnostico") or {}).get("escaneo") or {}
 
 
-# ------------------------------------------------------------------ ángulos
-# Cada ángulo devuelve (apertura_a, apertura_b, impacto, propuesta, asunto_a, asunto_b)
+# ------------------------------------------------------------------ variables de los textos
+# Los textos (plantillas.py) se editan en el módulo Contacto; aquí se calculan los datos reales del lead
+# que sustituyen a las {variables}.
 
-def _ang_sin_web(l):
-    n, datos = l["nombre"], _datos_maps(l)
-    clase = (l.get("diagnostico") or {}).get("clase_web")
-    con = f" con {datos}" if datos else ""
-    solo = {"red": " Hoy solo tienen redes sociales.", "directorio": " Hoy solo aparecen en un directorio."}.get(clase, "")
-    comp = _competidores(l)
-    ap_a = f"vi que aparecen en Google Maps{con}, pero sin página web propia.{solo}"
-    ap_b = (f"busqué {l.get('nicho', 'tu sector')} en {l.get('ciudad', 'tu zona')} y encontré {n}{con}, "
-            f"pero sin web propia.{solo}")
-    impacto = (comp + " " if comp else "") + "Quien los busca en Google y no encuentra web suele llamar al siguiente."
-    return (ap_a, ap_b, impacto.strip(),
-            "Lo hacemos a través de desarrollo web: una página que aparezca en Google y reciba contactos por WhatsApp.",
-            f"{n}: sin web = clientes que se van a la competencia", f"{n}: encontré tu ficha pero no tu web")
-
-
-def _ang_web_mala(l):
+def variables(l, angulo="sin_web"):
+    r = _remitente()
     n, e = l["nombre"], _escaneo(l)
     dom = _dominio(e.get("url_final") or l.get("web_url"))
-    opp = next((o for o in l.get("oportunidades", []) if o["tipo"] == "web_mala"), {})
-    detalle = (opp.get("detalle") or "").replace("Su web ", "")
-    if opp and not opp.get("verificado", True):
-        ap = f"intenté abrir la web de {n} ({dom}) y no logré hacerlo desde mi equipo."
+    datos = _datos_maps(l)
+    clase = (l.get("diagnostico") or {}).get("clase_web")
+    opps = l.get("oportunidades") or []
+
+    wm = next((o for o in opps if o["tipo"] == "web_mala"), {})
+    detalle = (wm.get("detalle") or "").replace("Su web ", "").strip() or "tiene aspectos por mejorar"
+    if wm and not wm.get("verificado", True):
+        hallazgo = f"intenté abrir la web de {n} ({dom}) y no logré hacerlo desde mi equipo."
+        movil = hallazgo
         impacto = "Si a ti también te falla, quien te busca en Google se va a otro negocio."
     else:
-        ap = f"entré a la web de {n} ({dom}) y encontré que {detalle}."
+        hallazgo = f"entré a la web de {n} ({dom}) y encontré que {detalle}."
+        movil = f"revisé {dom} desde mi móvil y encontré que {detalle}."
         impacto = "Google penaliza ese tipo de webs y el cliente que entra desde el móvil se va rápido."
-    return (ap, f"revisé {dom} desde mi móvil y encontré que {detalle}." if detalle else ap, impacto,
-            "Lo hacemos a través de rediseño y desarrollo web: rápida, segura y pensada para móvil.",
-            f"{n}: tu web actual te está costando clientes", f"{n}: revisé {dom}")
 
-
-def _ang_sin_medicion(l):
-    n, e = l["nombre"], _escaneo(l)
-    dom = _dominio(e.get("url_final") or l.get("web_url"))
-    opp = next((o for o in l.get("oportunidades", []) if o["tipo"] == "sin_medicion"), {})
-    parcial = "remarketing" in (opp.get("detalle") or "")
-    if parcial:
-        ap = f"revisé la web de {n} ({dom}): tiene analítica, pero no encontré píxel de Meta ni de Google Ads."
+    sm = next((o for o in opps if o["tipo"] == "sin_medicion"), {})
+    if "remarketing" in (sm.get("detalle") or ""):
+        medicion = f"revisé la web de {n} ({dom}): tiene analítica, pero no encontré píxel de Meta ni de Google Ads."
     else:
-        ap = f"revisé la web de {n} ({dom}) y no encontré Google Analytics ni píxel de Meta o de Google Ads."
-    return (ap, f"entré a {dom} y no detecté ninguna etiqueta de medición instalada.",
-            "Sin eso, si invierten en anuncios no saben cuántos contactos sale de cada uno ni pueden volver a "
-            "mostrarlos a quien ya visitó la web.",
-            "Lo hacemos a través de la instalación de medición: Google Tag Manager, píxeles y eventos de contacto.",
-            f"{n}: tu web no mide de dónde vienen los clientes", f"{n}: antes de invertir en anuncios")
+        medicion = f"revisé la web de {n} ({dom}) y no encontré Google Analytics ni píxel de Meta o de Google Ads."
+
+    seo = "; ".join(((l.get("diagnostico") or {}).get("seo_local") or [])[:3]) or "hay aspectos que se pueden mejorar"
+    return {
+        "nombre": n, "nicho": l.get("nicho") or "negocios como el tuyo", "ciudad": l.get("ciudad") or "tu zona", "dominio": dom,
+        "datos_maps": datos, "con_datos": f" con {datos}" if datos else "", "competidores": _competidores(l),
+        "solo_redes": {"red": "Hoy solo tienen redes sociales.", "directorio": "Hoy solo aparecen en un directorio."}.get(clase, ""),
+        "servicio": OPORTUNIDADES[angulo]["servicio"], "detalle_web": detalle, "hallazgo_web": hallazgo,
+        "hallazgo_web_movil": movil, "impacto_web": impacto, "hallazgo_medicion": medicion, "seo_lista": seo,
+        "remitente": r["nombre"], "cargo": r["cargo"], "agencia": r["agencia"], "contacto": r["contacto"],
+        "caso": f"Un caso reciente: {r['caso']}" if r["caso"] else "",
+    }
 
 
-def _ang_sin_captacion(l):
-    n, e = l["nombre"], _escaneo(l)
-    dom = _dominio(e.get("url_final") or l.get("web_url"))
-    return (f"entré a la web de {n} ({dom}) y no vi formulario, teléfono ni botón de WhatsApp.",
-            f"abrí {dom} y no encontré cómo contactarlos desde la web.",
-            "Quien entra con ganas de escribir y no encuentra cómo, se va.",
-            "Lo hacemos a través de ajustes en tu web: botón de WhatsApp, formulario y teléfono visibles.",
-            f"{n}: tu web no deja contactar fácil", f"{n}: cómo contactarte desde {dom}")
-
-
-def _ang_seo_local(l):
-    n, nicho, ciudad = l["nombre"], l.get("nicho", "tu sector"), l.get("ciudad", "tu zona")
-    seo = (l.get("diagnostico") or {}).get("seo_local") or []
-    lista = "; ".join(seo[:3])
-    return (f"busqué {nicho} en {ciudad} y encontré {n}, pero {lista}.",
-            f"revisé la ficha de {n} en Google Maps y vi que {lista}.",
-            "Eso influye en quién aparece primero cuando alguien busca \"cerca de mí\".",
-            "Lo hacemos a través de SEO local: ficha de Google, reseñas y datos de tu web ordenados.",
-            f"{n}: cómo aparecer antes en Google Maps", f"{n}: revisé tu ficha de Google")
-
-
-def _ang_reputacion(l):
-    n, datos = l["nombre"], _datos_maps(l)
-    return (f"vi que {n} tiene {datos} en Google Maps.",
-            f"revisé las reseñas de {n}: {datos}.",
-            "Muchos clientes descartan un negocio por debajo de 4,2 antes de llamar.",
-            "Lo hacemos a través de un sistema simple para pedir reseñas y responder las que ya tienes.",
-            f"{n}: tus reseñas en Google", f"{n}: una idea para subir tu valoración")
-
-
-def _ang_gestion(l):
-    n, nicho = l["nombre"], l.get("nicho", "tu sector")
-    return (f"hablando con {nicho} me cuentan que llevan citas, cobros y gastos entre WhatsApp y Excel. "
-            f"¿Es así en {n}?",
-            f"pregunta rápida sobre {n}: ¿cómo llevan hoy la facturación y los gastos?",
-            "Cuando todo está en cuadernos y chats, se pierden cobros y se pierde tiempo cada fin de mes.",
-            "Lo hacemos a través de una app a medida de facturación y gastos, sencilla de usar.",
-            f"{n}: facturación y gastos sin Excel", f"{n}: una pregunta sobre tu facturación")
-
-
-_ANGULOS = {"sin_web": _ang_sin_web, "web_mala": _ang_web_mala, "sin_medicion": _ang_sin_medicion,
-            "sin_captacion": _ang_sin_captacion, "seo_local": _ang_seo_local,
-            "reputacion": _ang_reputacion, "gestion": _ang_gestion}
-
-# Dato nuevo para el primer seguimiento, por ángulo (sin inventar cifras)
-_EXTRA_SEG = {
-    "sin_web": "Una web sencilla se publica en pocos días.",
-    "web_mala": "Corregir lo que te comenté no implica empezar de cero.",
-    "sin_medicion": "La instalación de medición se hace en un día y no toca el diseño.",
-    "sin_captacion": "Es un cambio pequeño: un botón y un formulario.",
-    "seo_local": "Empezar por la ficha de Google da resultados sin tocar nada más.",
-    "reputacion": "Responder las reseñas existentes ya mejora cómo te ve quien te busca.",
-    "gestion": "Con 15 minutos te muestro cómo se vería con tus propios datos.",
-}
+def lead_demo(angulo):
+    """Negocio de ejemplo para la vista previa del módulo Contacto (datos inventados, solo para ver el formato)."""
+    detalles = {"web_mala": "Su web no usa HTTPS ni se adapta al móvil", "sin_medicion": "No tiene analítica ni píxeles"}
+    return {
+        "nombre": "Clínica Dental Sol", "nicho": "clínicas dentales", "ciudad": "Cali", "rating": 4.6, "resenas": 120,
+        "competidores_nombres": ["Dental Uno", "Dental Dos"], "web_url": "https://clinicasol.co",
+        "oportunidades": [{"tipo": angulo, "verificado": True, "detalle": detalles.get(angulo, "")}],
+        "diagnostico": {"clase_web": "red" if angulo == "sin_web" else "propia", "escaneo": {"url_final": "https://clinicasol.co"},
+                        "seo_local": ["tiene solo 12 reseñas", "no publica horario"]},
+        "clave": "demo",
+    }
 
 
 def angulo_principal(opps):
@@ -194,51 +143,42 @@ def canal_para(lead):
     return "telefono"
 
 
-def construir(lead, angulo=None, canal=None, paso=0, variante=None):
+def construir(lead, angulo=None, canal=None, paso=0, variante=None, textos=None, piezas=None):
     """
     lead: dict con nombre, nicho, ciudad, rating, resenas, telefono, whatsapp, email, web_url,
           oportunidades (lista), diagnostico (dict), competidores_nombres (opcional), clave.
     paso: 0 = mensaje inicial, 1 = seguimiento (día +3), 2 = cierre (día +7).
+    textos / piezas: solo para la vista previa del módulo Contacto (texto sin guardar del mensaje / de saludo y firma).
     Devuelve {angulo, canal, paso, variante, asunto, cuerpo, palabras, plantilla}.
     """
-    angulo = angulo if angulo in _ANGULOS else (angulo_principal(lead.get("oportunidades")) or "sin_web")
+    angulo = angulo if angulo in OPORTUNIDADES else (angulo_principal(lead.get("oportunidades")) or "sin_web")
     canal = canal if canal in ("whatsapp", "email", "telefono") else canal_para(lead)
     variante = variante if variante in ("a", "b") else variante_estable(lead.get("clave") or lead["nombre"])
-    r = _remitente()
-    nombre = lead["nombre"]
-    ap_a, ap_b, impacto, propuesta, asu_a, asu_b = _ANGULOS[angulo](lead)
-    apertura = ap_a if variante == "a" else ap_b
-    asunto = asu_a if variante == "a" else asu_b
-    servicio = OPORTUNIDADES[angulo]["servicio"]
-    caso = f"Un caso reciente: {r['caso']}" if r["caso"] else ""
-    firma_email = f"{r['nombre']}\n{r['cargo']} — {r['agencia']}\n{r['contacto']}"
-    firma_wa = f"{r['nombre']} — {r['agencia']}\n{r['contacto']}"
+    paso = paso if paso in (0, 1, 2) else 0
     es_wa = canal != "email"
+    vals = variables(lead, angulo)
+    t = textos or plantillas.obtener(f"{angulo}:{paso}:{variante}")
+    g = dict(plantillas.globales(), **(piezas or {}))
 
-    if paso == 0:
-        quien = f"En {r['agencia']} trabajamos con {lead.get('nicho', 'negocios como el tuyo')} ayudándoles a conseguir más clientes."
-        cuerpo_core = "\n\n".join(x for x in (
-            apertura[0].upper() + apertura[1:],
-            impacto, f"{quien} {propuesta}", caso,
-            "¿Tiene sentido explorar si aplica a tu caso?\n¿Tienes 20 minutos esta semana?") if x)
-        if es_wa:
-            cuerpo = f"*Hola {nombre}*\n\n{cuerpo_core}\n\n{firma_wa}"
-            asunto = None
-        else:
-            cuerpo = f"Hola,\n\n{cuerpo_core}\n\n{firma_email}"
-    elif paso == 1:
-        cuerpo_core = (f"Te escribí hace unos días sobre {servicio} para {nombre}. {_EXTRA_SEG[angulo]}\n\n"
-                       "¿Lo vemos 15 minutos esta semana?")
-        cuerpo = (f"*Hola {nombre}*\n\n{cuerpo_core}\n\n{firma_wa}" if es_wa
-                  else f"Hola,\n\n{cuerpo_core}\n\n{firma_email}")
-        asunto = f"Re: {asunto}" if asunto and not es_wa else None
-    else:
-        cuerpo_core = (f"Último mensaje sobre {servicio} para {nombre}. Si ahora no es prioridad, sin problema: "
-                       "si más adelante te sirve, aquí estoy.")
-        cuerpo = (f"*Hola {nombre}*\n\n{cuerpo_core}\n\n{firma_wa}" if es_wa
-                  else f"Hola,\n\n{cuerpo_core}\n\n{firma_email}")
-        asunto = f"Re: {asunto}" if asunto and not es_wa else None
+    inicial = plantillas.obtener(f"{angulo}:0:{variante}")["asunto"] if paso else t["asunto"]
+    vals["asunto_inicial"] = plantillas.render_linea(inicial, vals)
+    nucleo = plantillas.render(t["cuerpo"], vals)
+    saludo = plantillas.render(g["saludo_whatsapp" if es_wa else "saludo_email"], vals, capitalizar=False)
+    firma = plantillas.render(g["firma_whatsapp" if es_wa else "firma_email"], vals, capitalizar=False)
+    cuerpo = "\n\n".join(x for x in (saludo, nucleo, firma) if x)
+    asunto = None if es_wa else plantillas.render_linea(t["asunto"], vals)
 
     return {"angulo": angulo, "canal": canal, "paso": paso, "variante": variante, "asunto": asunto,
             "cuerpo": cuerpo, "palabras": contar_palabras(cuerpo),
             "plantilla": f"{angulo}:{'wa' if es_wa else 'email'}:{variante}"}
+
+
+def vista_previa(clave, asunto, cuerpo, canal="email"):
+    """Cómo quedaría un texto (sin guardarlo) con un negocio de ejemplo. Valida igual que al guardar."""
+    asunto, cuerpo = plantillas.validar(clave, asunto, cuerpo)
+    if clave.startswith("global:"):
+        pieza = clave.split(":")[1]
+        canal = "whatsapp" if pieza.endswith("whatsapp") else "email"
+        return construir(lead_demo("sin_web"), "sin_web", canal, 0, "a", piezas={pieza: cuerpo})
+    ang, paso, var = clave.split(":")
+    return construir(lead_demo(ang), ang, canal, int(paso), var, textos={"asunto": asunto, "cuerpo": cuerpo})

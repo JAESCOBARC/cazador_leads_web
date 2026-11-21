@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from datetime import timedelta
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, MetaData, String, Table, Text,
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, MetaData, String, Table, Text,
     create_engine, inspect, select, insert, update, delete, func, text,
 )
 from werkzeug.security import generate_password_hash
@@ -178,6 +178,30 @@ ajustes = Table(
     Column('clave', String(60), primary_key=True),
     Column('valor', Text, nullable=False),
     Column('secreto', Boolean, nullable=False, default=False),
+    Column('actualizado_en', DateTime, nullable=False, default=ahora),
+    Column('actualizado_por', Integer, ForeignKey('usuarios.id')),
+)
+
+
+# Textos de los mensajes editados desde el módulo Contacto (ver plantillas.py).
+# Solo se guardan los personalizados: si no hay fila, se usa el texto original del código.
+plantillas_msg = Table(
+    'plantillas_msg', metadata,
+    Column('clave', String(60), primary_key=True),   # "sin_web:0:a" o "global:firma_email"
+    Column('asunto', String(255)),
+    Column('cuerpo', Text, nullable=False),
+    Column('actualizado_en', DateTime, nullable=False, default=ahora),
+    Column('actualizado_por', Integer, ForeignKey('usuarios.id')),
+)
+
+# Imagen de firma de los correos (una sola fila, id = 1).
+firma_imagen = Table(
+    'firma_imagen', metadata,
+    Column('id', Integer, primary_key=True),
+    Column('contenido', LargeBinary, nullable=False),
+    Column('tipo', String(20), nullable=False),      # image/png | image/jpeg | image/gif
+    Column('nombre', String(120)),
+    Column('ancho', Integer, nullable=False, default=200),
     Column('actualizado_en', DateTime, nullable=False, default=ahora),
     Column('actualizado_por', Integer, ForeignKey('usuarios.id')),
 )

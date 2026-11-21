@@ -1510,3 +1510,173 @@ def test_prueba_de_propuesta_solo_llega_a_mi_correo_y_no_toca_el_lead(sin_correo
     with db.engine.connect() as conn:
         assert conn.execute(_sel(db.envios).where(db.envios.c.lead_id == lid)).first() is None            # sin historial
         assert conn.execute(_sel(db.leads.c.estado).where(db.leads.c.id == lid)).scalar() == "nuevo"       # sigue «nuevo»
+
+
+# ---- módulo Contacto: textos editables e imagen de firma
+import base64 as _b64
+import plantillas
+
+PNG_1x1 = _b64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+
+
+@pytest.fixture
+def contacto_limpio():
+    def vaciar():
+        import db
+        with db.engine.begin() as conn:
+            conn.execute(db.plantillas_msg.delete())
+            conn.execute(db.firma_imagen.delete())
+        plantillas.invalidar()
+    vaciar()
+    yield
+    vaciar()
+
+
+def test_contacto_solo_para_administradores_y_trae_los_42_textos(contacto_limpio, cliente, cliente_laura):
+    assert cliente_laura.get("/api/contacto").status_code == 403
+    d = cliente.get("/api/contacto").get_json()
+    claves = [k for k in d["plantillas"] if not k.startswith("global:")]
+    assert len(claves) == 7 * 3 * 2 and len(d["globales"]) == 4
+    assert all(not v["personalizada"] for v in d["plantillas"].values())
+    assert {"nombre", "ciudad", "agencia"} <= {v["nombre"] for v in d["variables"]}
+    assert d["max_palabras"] == 150 and d["imagen"]["existe"] is False
+
+
+def test_editar_un_texto_cambia_el_mensaje_y_se_puede_restaurar(contacto_limpio, cliente, cliente_laura):
+    lid = _crear_lead(nombre="Negocio Texto Propio", email="texto@negocio.co")
+    url = "/api/contacto/plantillas/sin_web:0:a"
+    pedir = lambda: cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&variante=a&canal=email&paso=0").get_json()
+    original = pedir()
+    cuerpo = "Hola, soy yo. Busqué {nicho} en {ciudad} y vi {nombre}.\n\n{caso}\n\n¿Hablamos?"
+    assert cliente.put(url, json={"asunto": "x", "cuerpo": cuerpo}).status_code == 403                      # CSRF
+    assert cliente_laura.put(url, headers=H, json={"asunto": "Asunto nuevo", "cuerpo": cuerpo}).status_code == 403
+    r = cliente.put(url, headers=H, json={"asunto": "Para {nombre}", "cuerpo": cuerpo})
+    assert r.status_code == 200 and r.get_json()["plantillas"]["sin_web:0:a"]["personalizada"] is True
+    nuevo = pedir()
+    assert "Busqué abogados en Cali y vi Negocio Texto Propio." in nuevo["cuerpo"] and nuevo["asunto"] == "Para Negocio Texto Propio"
+    assert nuevo["cuerpo"].startswith("Hola,\n\n") and "{caso}" not in nuevo["cuerpo"]                     # saludo, y {caso} vacío desaparece
+    assert cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&variante=b&canal=email&paso=0").get_json()["cuerpo"] != nuevo["cuerpo"]  # la B sigue intacta
+    assert cliente.delete(url, headers=H).status_code == 200
+    assert pedir()["cuerpo"] == original["cuerpo"]
+
+
+def test_los_textos_se_validan(contacto_limpio, cliente):
+    url = "/api/contacto/plantillas/web_mala:1:b"
+    ok = "Retomo lo de {servicio} para {nombre}. ¿Te va bien mañana?"
+    def put(**kw):
+        return cliente.put(url, headers=H, json=dict({"asunto": "Re: {asunto_inicial}", "cuerpo": ok}, **kw))
+    assert put().status_code == 200
+    assert put(cuerpo="Hola {inventada} esto es largo de sobra").status_code == 400                     # variable inexistente
+    assert put(cuerpo="Hola <script>alert(1)</script> esto es largo de sobra").status_code == 400      # nada de HTML
+    assert put(cuerpo="corto").status_code == 400
+    assert put(asunto="  ").status_code == 400
+    assert put(cuerpo="Mira {asunto_inicial} esto es largo de sobra").status_code == 400               # solo vale en el asunto
+    assert cliente.put("/api/contacto/plantillas/sin_web:0:a", headers=H, json={"asunto": "Re: {asunto_inicial}", "cuerpo": ok}).status_code == 400  # ni en el inicial
+    assert cliente.put("/api/contacto/plantillas/otra:cosa:x", headers=H, json={"asunto": "aaa", "cuerpo": ok}).status_code == 400
+    assert cliente.delete("/api/contacto/plantillas/otra:cosa:x", headers=H).status_code == 404
+
+
+def test_saludo_y_firma_generales_y_vista_previa_sin_guardar(contacto_limpio, cliente):
+    r = cliente.post("/api/contacto/vista-previa", headers=H, json={"clave": "sin_web:0:a", "asunto": "Hola {nombre}", "cuerpo": "Un texto de prueba para {nombre} en {ciudad}.", "canal": "email"})
+    d = r.get_json()
+    assert r.status_code == 200 and "Clínica Dental Sol" in d["asunto"] and "en Cali." in d["cuerpo"] and d["palabras"] > 5
+    assert cliente.get("/api/contacto").get_json()["plantillas"]["sin_web:0:a"]["personalizada"] is False   # la vista previa no guarda
+    assert cliente.post("/api/contacto/vista-previa", headers=H, json={"clave": "sin_web:0:a", "asunto": "abc", "cuerpo": "Hola {nope} texto largo de sobra"}).status_code == 400
+    assert cliente.put("/api/contacto/plantillas/global:firma_email", headers=H, json={"cuerpo": "Un abrazo,\n{remitente} · {agencia}"}).status_code == 200
+    lid = _crear_lead(nombre="Negocio Firma Global", email="firma@negocio.co")
+    m = cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&canal=email").get_json()["cuerpo"]
+    assert "Un abrazo," in m
+    w = cliente.get(f"/api/leads/{lid}/mensaje?angulo=sin_web&canal=whatsapp").get_json()["cuerpo"]
+    assert "Un abrazo" not in w                                                                           # la de WhatsApp es otra pieza
+
+
+def test_los_textos_por_defecto_cumplen_las_reglas_del_proyecto():
+    import mensajes
+    for ang in plantillas.ANGULOS:
+        for paso in (0, 1, 2):
+            for var in "ab":
+                m = mensajes.construir(mensajes.lead_demo(ang), ang, "email", paso, var)
+                assert m["palabras"] <= 150 and "{" not in m["cuerpo"] and "{" not in (m["asunto"] or "")
+                assert "increíble" not in m["cuerpo"].lower() and "vuestro" not in m["cuerpo"].lower()
+        assert mensajes.construir(mensajes.lead_demo(ang), ang, "email", 1, "a")["asunto"].startswith("Re: ")
+    # A y B de los seguimientos ya no son idénticos (si no, no se podrían comparar)
+    a = mensajes.construir(mensajes.lead_demo("sin_web"), "sin_web", "email", 1, "a")["cuerpo"]
+    b = mensajes.construir(mensajes.lead_demo("sin_web"), "sin_web", "email", 1, "b")["cuerpo"]
+    assert a != b
+
+
+def test_imagen_de_firma_subir_validar_y_quitar(contacto_limpio, cliente, cliente_laura):
+    import io
+    url = "/api/contacto/firma-imagen"
+    def subir(c, datos, nombre="logo.png", ancho="240", headers=H):
+        return c.post(url, headers=headers, data={"imagen": (io.BytesIO(datos), nombre), "ancho": ancho}, content_type="multipart/form-data")
+    assert cliente.get(url).status_code == 404
+    assert subir(cliente_laura, PNG_1x1).status_code == 403                                  # solo administradores
+    assert subir(cliente, PNG_1x1, headers={}).status_code == 403                            # CSRF
+    assert subir(cliente, b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', "x.png").status_code == 400   # SVG: no, aunque se llame .png
+    assert subir(cliente, b"GIF89a" + b"0" * 400 * 1024).status_code == 400                  # demasiado pesada
+    assert subir(cliente, PNG_1x1, ancho="5").status_code == 400 and subir(cliente, PNG_1x1, ancho="abc").status_code == 400
+    r = subir(cliente, PNG_1x1)
+    assert r.status_code == 200 and r.get_json()["imagen"]["existe"] and r.get_json()["imagen"]["ancho"] == 240 and r.get_json()["imagen"]["tipo"] == "image/png"
+    g = cliente.get(url)
+    assert g.status_code == 200 and g.mimetype == "image/png" and g.data == PNG_1x1
+    assert g.headers["X-Content-Type-Options"] == "nosniff" and "sandbox" in g.headers["Content-Security-Policy"]
+    assert cliente.patch(url, headers=H, json={"ancho": 320}).get_json()["imagen"]["ancho"] == 320
+    assert cliente.patch(url, headers=H, json={"ancho": 9999}).status_code == 400
+    assert cliente.delete(url, headers=H).get_json()["imagen"]["existe"] is False
+    assert cliente.get(url).status_code == 404
+
+
+def test_correo_con_imagen_de_firma_incrusta_la_imagen_y_escapa_el_texto(contacto_limpio, sin_correo, cliente):
+    import io
+    import app as aplicacion
+    mp = sin_correo; _con_resend(mp); mp.setenv("ENVIO_MAX_DIA", "50")
+    recibidos = []
+    mp.setattr(correo, "enviar", lambda asunto, texto, html=None, destinos=None, reply_to=None, imagenes=None:
+               recibidos.append({"texto": texto, "html": html, "destinos": destinos, "imagenes": imagenes}))
+    lid = _crear_lead(nombre="Negocio Con Imagen", email="imagen@negocio.co")
+    cuerpo = "Hola, vi <b>tu</b> negocio & quería proponerte algo concreto.\n\nSegundo párrafo con <script>alert(1)</script>."
+    assert cliente.post(f"/api/leads/{lid}/enviar-email", headers=H, json=dict(BODY_OK, cuerpo=cuerpo)).status_code == 200   # sin imagen: igual que siempre
+    assert recibidos[0]["html"] is None and recibidos[0]["imagenes"] is None
+    lid2 = _crear_lead(nombre="Negocio Con Imagen 2", email="imagen2@negocio.co")
+    cliente.post("/api/contacto/firma-imagen", headers=H, data={"imagen": (io.BytesIO(PNG_1x1), "l.png"), "ancho": "180"}, content_type="multipart/form-data")
+    assert cliente.post(f"/api/leads/{lid2}/enviar-email", headers=H, json=dict(BODY_OK, cuerpo=cuerpo)).status_code == 200
+    e = recibidos[1]
+    assert e["destinos"] == ["imagen2@negocio.co"] and "responde «no»" in e["texto"] and "<b>tu</b>" in e["texto"]    # el texto plano siempre va
+    assert "<script>" not in e["html"] and "&lt;script&gt;" in e["html"] and "&lt;b&gt;tu&lt;/b&gt;" in e["html"] and "&amp;" in e["html"]
+    img = e["imagenes"][0]
+    assert f'src="cid:{img["cid"]}"' in e["html"] and 'width="180"' in e["html"] and img["datos"] == PNG_1x1 and img["tipo"] == "image/png"
+    # la prueba a mi correo también lleva la imagen y el aviso, y nunca va al lead
+    aplicacion._ULTIMA_PRUEBA.clear()
+    assert cliente.post(f"/api/leads/{lid2}/enviar-prueba", headers=H, json=BODY_OK).status_code == 200
+    p = recibidos[2]
+    assert p["destinos"] == ["duena@example.com"] and p["imagenes"] and "PRUEBA" in p["html"]
+
+
+def test_correo_con_imagen_por_smtp_de_punta_a_punta(contacto_limpio, sin_correo):
+    pytest.importorskip("aiosmtpd")
+    from aiosmtpd.controller import Controller
+    from email import message_from_bytes
+    recibidos = []
+
+    class Manejador:
+        async def handle_DATA(self, server, session, envelope):
+            recibidos.append(message_from_bytes(envelope.content))
+            return "250 OK"
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0)); puerto = s.getsockname()[1]
+    ctl = Controller(Manejador(), hostname="127.0.0.1", port=puerto); ctl.start()
+    try:
+        mp = sin_correo
+        mp.setenv("SMTP_HOST", "127.0.0.1"); mp.setenv("SMTP_PUERTO", str(puerto)); mp.setenv("SMTP_SEGURIDAD", "ninguna")
+        mp.setenv("ALERTA_EMAIL_DESTINO", "duena@example.com")
+        html = correo.html_propuesta("Hola\n\nMundo", "Baja", {"cid": "firma-1@x", "ancho": 200, "alt": "Estudio"})
+        correo.enviar("Con imagen", "Hola\n\nMundo", html, imagenes=[{"cid": "firma-1@x", "datos": PNG_1x1, "tipo": "image/png", "nombre": "firma"}])
+    finally:
+        ctl.stop()
+    msg = recibidos[0]
+    tipos = [p.get_content_type() for p in msg.walk()]
+    assert "text/plain" in tipos and "text/html" in tipos and "image/png" in tipos and "multipart/related" in tipos
+    png = next(p for p in msg.walk() if p.get_content_type() == "image/png")
+    assert png["Content-ID"] == "<firma-1@x>" and png.get_payload(decode=True) == PNG_1x1

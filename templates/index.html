@@ -53,6 +53,10 @@
             <svg class="icono" aria-hidden="true"><use href="#i-chart"/></svg>
             <span class="corto">Datos</span><span class="largo">Analítica</span>
         </button>
+        <button type="button" class="nav-item" data-vista="contacto" id="navContacto" hidden>
+            <svg class="icono" aria-hidden="true"><use href="#i-mail"/></svg>
+            <span class="corto">Contacto</span><span class="largo">Contacto</span>
+        </button>
         <button type="button" class="nav-item" data-vista="usuarios" id="navUsuarios" hidden>
             <svg class="icono" aria-hidden="true"><use href="#i-settings"/></svg>
             <span class="corto">Ajustes</span><span class="largo">Ajustes</span>
@@ -215,6 +219,15 @@
         </section>
 
         <!-- ============ USUARIOS ============ -->
+        <section class="vista" id="vista-contacto" aria-labelledby="h-contacto">
+            <header class="pagina-cab">
+                <h1 id="h-contacto">Contacto</h1>
+                <p>Los textos de tus mensajes y tu imagen de firma. Edítalos cuando quieras: los cambios valen para todo el equipo desde el siguiente mensaje que se genere.</p>
+            </header>
+            <div class="aviso error" id="errorContacto" role="alert"></div>
+            <div id="contactoCont"></div>
+        </section>
+
         <section class="vista" id="vista-usuarios" aria-labelledby="h-usuarios">
             <header class="pagina-cab">
                 <h1 id="h-usuarios">Ajustes</h1>
@@ -457,6 +470,7 @@
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <script src="{{ url_for('static', filename='analitica.js') }}"></script>
     <script src="{{ url_for('static', filename='ajustes.js') }}"></script>
+    <script src="{{ url_for('static', filename='contacto.js') }}"></script>
     <script>
     // ------------------------------------------------------------ utilidades
     const ESTADOS = {
@@ -515,9 +529,9 @@
     }
 
     // ------------------------------------------------------------ navegación
-    const VISTAS = ['buscar', 'leads', 'analitica', 'usuarios'];
+    const VISTAS = ['buscar', 'leads', 'analitica', 'contacto', 'usuarios'];
     function irA(vista) {
-        if (!VISTAS.includes(vista) || (vista === 'usuarios' && YO && YO.rol !== 'admin')) vista = 'buscar';
+        if (!VISTAS.includes(vista) || ((vista === 'usuarios' || vista === 'contacto') && YO && YO.rol !== 'admin')) vista = 'buscar';
         VISTAS.forEach(v => $('vista-' + v).classList.toggle('active', v === vista));
         document.querySelectorAll('.nav-item[data-vista]').forEach(b => {
             if (b.dataset.vista === vista) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
@@ -528,6 +542,7 @@
         if (vista === 'buscar') setTimeout(() => { iniciarMapa(); if (mapa) mapa.resize(); }, 60);
         if (vista === 'leads') cargarLeads();
         if (vista === 'analitica') cargarAnalitica();
+        if (vista === 'contacto' && window.Contacto) window.Contacto.cargar();
         if (vista === 'usuarios') { cargarUsuarios(); if (window.Ajustes) window.Ajustes.cargar(); }
     }
     document.querySelectorAll('.nav-item[data-vista]').forEach(b => b.addEventListener('click', () => irA(b.dataset.vista)));
@@ -537,6 +552,7 @@
         $('yoNombre').textContent = YO.nombre;
         $('yoRol').textContent = YO.rol === 'admin' ? 'Administrador' : 'Usuario';
         $('navUsuarios').hidden = YO.rol !== 'admin';
+        $('navContacto').hidden = YO.rol !== 'admin';
         await refrescarUsuarios();
         try { CORREO = await api('/api/alertas/estado'); } catch (e) { /* el envío por email simplemente no se ofrece */ }
         try { await cargarSectores(); } catch (e) { aviso($('error'), 'error', e.message); }

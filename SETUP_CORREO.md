@@ -60,6 +60,14 @@ Botón **Enviar por email** en cada lead con email publicado. Siempre manual:
 - No sale si el mensaje aún tiene datos por completar (`[TU NOMBRE]`…): complétalos en **Remitente y firma**.
 - Cada intento (enviado o con error) queda en el **historial de correos del lead**, con el mensaje exacto que se envió. El lead pasa a *Contactado* con seguimiento a +3 días.
 
+## Textos de los mensajes y firma con imagen (módulo Contacto)
+
+En el menú **Contacto** (solo administradores) editas cada texto: por ángulo, paso (inicial, seguimiento, cierre) y variante A/B, con vista previa en vivo. El saludo y la firma de email y de WhatsApp están en la pestaña «Saludo y firma». En la pestaña «Imagen de firma» subes un logo o firma gráfica (PNG, JPG o GIF, hasta 300 KB) que se añade al final de los emails.
+
+- Los cambios valen para todo el equipo desde el siguiente mensaje que se genere. «Restaurar el original» vuelve al texto que trae la app.
+- Con imagen, el correo sale en HTML con la imagen incrustada y siempre con la versión de texto. Usa «Enviarme una prueba» en un lead para verlo en tu bandeja antes de escribir a un cliente.
+- Si usas **Resend**, la imagen va como adjunto incrustado (`content_id`). Compruébalo con la prueba: si tu bandeja no la muestra, quita la imagen y avísame.
+
 ## Variables de entorno (opcionales)
 
 Siguen funcionando como respaldo: `SERPAPI_KEY`, `SERPAPI_CUOTA_MES`, `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CLAVE`, `RESEND_API_KEY`, `EMAIL_REMITENTE`, `EMAIL_RESPONDER_A`, `ALERTA_EMAIL_DESTINO`, `ALERTA_UMBRALES`, `ENVIO_MAX_DIA`, `REMITENTE_NOMBRE`, `REMITENTE_CARGO`, `AGENCIA_NOMBRE`, `REMITENTE_CONTACTO`, `CASO_EXITO`. Imprescindibles en Render: `SECRET_KEY`, `DATABASE_URL`, `ADMIN_USER` y `ADMIN_PASSWORD`.

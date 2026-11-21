@@ -26,6 +26,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import escaner
 import mensajes
+import plantillas
 import ajustes
 import alertas
 import correo
@@ -42,6 +43,7 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_SECURE=bool(os.environ.get('RENDER')),
     PERMANENT_SESSION_LIFETIME=timedelta(days=14),
+    MAX_CONTENT_LENGTH=1024 * 1024,   # tope de cualquier subida (la imagen de firma admite 300 KB)
 )
 
 BASE_DIR = Path(__file__).parent
@@ -432,11 +434,28 @@ def _enviados_hoy(conn=None):
         return c.execute(q).scalar()
 
 
+def _baja_envio():
+    return ('Te escribo porque encontré tu negocio en Google Maps. Si no quieres recibir más mensajes, '
+            'responde «no» y no volveré a escribirte.')
+
+
 def _pie_envio():
     firma = ' · '.join(x for x in (ajustes.obtener('REMITENTE_NOMBRE').strip(), ajustes.obtener('AGENCIA_NOMBRE').strip()) if x)
-    return ('\n\n--\n' + (firma + '\n' if firma else '') +
-            'Te escribo porque encontré tu negocio en Google Maps. Si no quieres recibir más mensajes, '
-            'responde «no» y no volveré a escribirte.')
+    return '\n\n--\n' + (firma + '\n' if firma else '') + _baja_envio()
+
+
+def _enviar_propuesta(asunto, cuerpo, destinos, aviso=None):
+    """Envía el mensaje con su firma de texto y la línea de baja. Si hay imagen de firma, el correo sale también
+    en HTML con la imagen incrustada; el texto plano va siempre como alternativa."""
+    texto = (aviso + '\n\n' if aviso else '') + cuerpo + _pie_envio()
+    reply_to = ajustes.obtener('EMAIL_RESPONDER_A').strip() or None
+    img = plantillas.imagen()
+    if not img:
+        return correo.enviar(asunto, texto, destinos=destinos, reply_to=reply_to)
+    cid = 'firma-' + secrets.token_hex(8) + '@cazadorleads'
+    html = correo.html_propuesta(cuerpo, _baja_envio(), {'cid': cid, 'ancho': img['ancho'], 'alt': ajustes.obtener('AGENCIA_NOMBRE').strip() or 'Firma'}, aviso)
+    return correo.enviar(asunto, texto, html, destinos=destinos, reply_to=reply_to,
+                         imagenes=[{'cid': cid, 'datos': bytes(img['contenido']), 'tipo': img['tipo'], 'nombre': 'firma'}])
 
 
 _ULTIMA_PRUEBA = {}
@@ -467,8 +486,7 @@ def enviar_prueba_lead(lead_id):
     pendientes = sorted(set(re.findall(r'\[TU [^\]]*\]', asunto + cuerpo)))
     aviso_prueba = ('[PRUEBA — no se envió al cliente. Así se vería su correo.]\n\n')
     try:
-        correo.enviar('[PRUEBA] ' + asunto, aviso_prueba + cuerpo + _pie_envio(), destinos=destinos,
-                      reply_to=ajustes.obtener('EMAIL_RESPONDER_A').strip() or None)
+        _enviar_propuesta('[PRUEBA] ' + asunto, cuerpo, destinos, aviso=aviso_prueba.strip())
     except correo.CorreoError as e:
         return jsonify({'error': str(e)}), 502
     return jsonify({'ok': True, 'destinos': [correo.enmascarar(x) for x in destinos], 'pendientes': pendientes})
@@ -507,7 +525,7 @@ def enviar_email_lead(lead_id):
         if reciente:
             return jsonify({'error': 'Ya enviaste un correo a este lead en las últimas 24 horas'}), 409
     try:
-        correo.enviar(asunto, cuerpo + _pie_envio(), destinos=[destino], reply_to=ajustes.obtener('EMAIL_RESPONDER_A').strip() or None)
+        _enviar_propuesta(asunto, cuerpo, [destino])
     except correo.CorreoError as e:
         with db.engine.begin() as conn:
             conn.execute(insert(E).values(lead_id=lead_id, usuario_id=request.user['id'], destino=destino, asunto=asunto[:255],
@@ -520,6 +538,107 @@ def enviar_email_lead(lead_id):
     out = detalle_lead(lead_id).get_json()
     out['envios_restantes_hoy'] = max(0, _envio_max() - _enviados_hoy())
     return jsonify(out)
+
+
+# ---------------------------------------------------------------- Módulo Contacto (textos de los mensajes + imagen de firma)
+
+def _estado_contacto():
+    return {
+        'angulos': [{'id': a, 'titulo': escaner.OPORTUNIDADES[a]['titulo'], 'servicio': escaner.OPORTUNIDADES[a]['servicio']} for a in plantillas.ANGULOS],
+        'pasos': [{'id': k, 'titulo': v} for k, v in plantillas.PASOS.items()],
+        'globales': [{'clave': k, 'titulo': v} for k, v in plantillas.GLOBALES.items()],
+        'variables': [{'nombre': k, 'explicacion': v[0], 'ejemplo': v[1]} for k, v in plantillas.VARIABLES.items()],
+        'plantillas': plantillas.estado(),
+        'max_palabras': mensajes.MAX_PALABRAS,
+        'imagen': plantillas.imagen_info(),
+    }
+
+
+@app.route('/api/contacto')
+@solo_admin
+def contacto_estado():
+    return jsonify(_estado_contacto())
+
+
+@app.route('/api/contacto/plantillas/<path:clave>', methods=['PUT'])
+@solo_admin
+def contacto_guardar(clave):
+    d = request.get_json(silent=True) or {}
+    try:
+        plantillas.guardar(clave, d.get('asunto'), d.get('cuerpo'), request.user['id'])
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 400
+    print(f"[CONTACTO] {request.user['usuario']} modificó el texto {clave}")
+    return jsonify(_estado_contacto())
+
+
+@app.route('/api/contacto/plantillas/<path:clave>', methods=['DELETE'])
+@solo_admin
+def contacto_restaurar(clave):
+    try:
+        plantillas.restaurar(clave)
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 404
+    return jsonify(_estado_contacto())
+
+
+@app.route('/api/contacto/vista-previa', methods=['POST'])
+@solo_admin
+def contacto_vista_previa():
+    d = request.get_json(silent=True) or {}
+    canal = d.get('canal') if d.get('canal') in ('email', 'whatsapp') else 'email'
+    try:
+        m = mensajes.vista_previa(str(d.get('clave') or ''), d.get('asunto'), d.get('cuerpo'), canal)
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'asunto': m['asunto'], 'cuerpo': m['cuerpo'], 'palabras': m['palabras'], 'max_palabras': mensajes.MAX_PALABRAS})
+
+
+@app.route('/api/contacto/firma-imagen')
+def contacto_firma_imagen():
+    img = plantillas.imagen()
+    if not img:
+        return jsonify({'error': 'No hay imagen de firma'}), 404
+    r = Response(bytes(img['contenido']), mimetype=img['tipo'])
+    r.headers['X-Content-Type-Options'] = 'nosniff'
+    r.headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
+    r.headers['Cache-Control'] = 'private, no-cache'
+    return r
+
+
+@app.route('/api/contacto/firma-imagen', methods=['POST'])
+@solo_admin
+def contacto_firma_subir():
+    f = request.files.get('imagen')
+    if not f:
+        return jsonify({'error': 'Elige una imagen'}), 400
+    try:
+        plantillas.guardar_imagen(f.read(plantillas.IMAGEN_MAX_BYTES + 1), f.filename, request.form.get('ancho') or 200, request.user['id'])
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify(_estado_contacto())
+
+
+@app.route('/api/contacto/firma-imagen', methods=['PATCH'])
+@solo_admin
+def contacto_firma_ancho():
+    try:
+        plantillas.cambiar_ancho((request.get_json(silent=True) or {}).get('ancho'))
+    except plantillas.PlantillaError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify(_estado_contacto())
+
+
+@app.route('/api/contacto/firma-imagen', methods=['DELETE'])
+@solo_admin
+def contacto_firma_quitar():
+    plantillas.quitar_imagen()
+    return jsonify(_estado_contacto())
+
+
+@app.errorhandler(413)
+def demasiado_grande(_e):
+    return jsonify({'error': 'El archivo es demasiado grande'}), 413
 
 
 # ---------------------------------------------------------------- Avisos por email (cuota de SerpAPI)

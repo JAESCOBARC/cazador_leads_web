@@ -46,6 +46,8 @@ La app web escanea una ciudad por sectores y detecta qué le falta a cada negoci
 Cada lead recibe un score (demanda en Maps + oportunidades + alcanzabilidad + ticket del sector) y prioridad alta/media/baja.
 El ticket por sector es una estimación orientativa. El mini-caso solo aparece si defines `CASO_EXITO` (un caso real).
 Seguimiento: mensaje inicial → +3 días → +4 días → cierre. Cada plantilla (ángulo:canal:variante A/B) se mide en Analítica.
+
+**Contacto** (módulo del menú, solo administradores; `plantillas.py`, `static/contacto.js`): los textos de los mensajes se editan en la app. Hay un texto por cada ángulo × paso (inicial / seguimiento / cierre) × variante A/B (42), más cuatro piezas generales (saludo y firma de email y de WhatsApp). Llevan variables entre llaves (`{nombre}`, `{ciudad}`, `{datos_maps}`, `{agencia}`…) que se sustituyen por datos reales; solo se admiten las de la lista (no se evalúa nada, es sustitución de texto) y no se permite `<` ni `>`. Vista previa en vivo con un negocio de ejemplo, aviso si pasa de 150 palabras y «Restaurar el original». Los textos originales viven en el código; lo editado se guarda en la tabla `plantillas_msg` y tiene prioridad. **Imagen de firma** (PNG/JPG/GIF, hasta 300 KB, validada por sus primeros bytes; SVG y WebP no): se guarda en la base (`firma_imagen`) y los emails salen en HTML con la imagen incrustada (`cid:`) más la versión de texto; no aparece en WhatsApp.
 Tests: `pytest tests` (offline, sin gastar créditos).
 
 ## Flujo de Ejecución

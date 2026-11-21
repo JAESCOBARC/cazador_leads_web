@@ -12,6 +12,8 @@ Destinatarios: ALERTA_EMAIL_DESTINO (uno o varios, separados por coma). Remitent
 Los errores que se muestran al usuario nunca incluyen contraseñas ni claves.
 """
 
+import base64
+import html as _html
 import os
 import re
 import smtplib
@@ -116,12 +118,15 @@ def _smtp(msg):
         raise CorreoError(f"No se pudo enviar por SMTP: {limpiar(e)}.{extra}") from e
 
 
-def _resend(asunto, texto, html, destinos, reply_to=None):
+def _resend(asunto, texto, html, destinos, reply_to=None, imagenes=None):
     clave = ajustes.obtener("RESEND_API_KEY").strip()
+    adjuntos = [{"filename": i["nombre"], "content": base64.b64encode(i["datos"]).decode("ascii"), "content_id": i["cid"]}
+                for i in (imagenes or [])]
     try:
         r = requests.post("https://api.resend.com/emails", timeout=15, headers={"Authorization": f"Bearer {clave}"},
                           json={"from": remitente(), "to": destinos, "subject": asunto, "text": texto,
-                                **({"html": html} if html else {}), **({"reply_to": reply_to} if reply_to else {})})
+                                **({"html": html} if html else {}), **({"reply_to": reply_to} if reply_to else {}),
+                                **({"attachments": adjuntos} if adjuntos else {})})
     except requests.RequestException as e:
         raise CorreoError(f"No se pudo contactar con Resend: {limpiar(e)}") from e
     if r.status_code >= 400:
@@ -132,8 +137,25 @@ def _resend(asunto, texto, html, destinos, reply_to=None):
         raise CorreoError(f"Resend rechazó el envío ({r.status_code}): {limpiar(detalle) or 'sin detalle'}")
 
 
-def enviar(asunto, texto, html=None, destinos=None, reply_to=None):
-    """Envía un correo a los destinatarios configurados (o a `destinos`). Lanza CorreoError si no puede."""
+def html_propuesta(cuerpo, baja, imagen=None, aviso=None):
+    """HTML sencillo de una propuesta: el texto tal cual (escapado), la imagen de firma incrustada (cid:) y la línea de baja.
+    Todo lo que viene del usuario o del negocio se escapa: nunca se interpreta como HTML."""
+    esc = lambda t: _html.escape(t, quote=True)  # noqa: E731
+    parrafos = "".join(f'<p style="margin:0 0 14px">{esc(p).replace(chr(10), "<br>")}</p>' for p in cuerpo.split("\n\n") if p.strip())
+    img = ""
+    if imagen:
+        img = (f'<p style="margin:18px 0 0"><img src="cid:{imagen["cid"]}" width="{int(imagen["ancho"])}" alt="{esc(imagen.get("alt") or "Firma")}" '
+               f'style="display:block;border:0;max-width:100%;height:auto"></p>')
+    cab = f'<p style="margin:0 0 18px;padding:8px 10px;background:#fff4d6;color:#6b4e00;font-size:13px">{esc(aviso)}</p>' if aviso else ""
+    return ('<!doctype html><html><body style="margin:0;padding:16px;background:#ffffff">'
+            '<div style="max-width:600px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1d2733">'
+            f'{cab}{parrafos}{img}'
+            f'<p style="margin:22px 0 0;font-size:12px;color:#6b7785">{esc(baja)}</p></div></body></html>')
+
+
+def enviar(asunto, texto, html=None, destinos=None, reply_to=None, imagenes=None):
+    """Envía un correo a los destinatarios configurados (o a `destinos`). Lanza CorreoError si no puede.
+    imagenes: lista de {cid, datos (bytes), tipo ('image/png'…), nombre} incrustadas en el html con <img src="cid:...">."""
     prov = proveedor()
     destinos = destinos or destinatarios()
     if not prov:
@@ -142,7 +164,7 @@ def enviar(asunto, texto, html=None, destinos=None, reply_to=None):
         raise CorreoError("No hay destinatarios válidos (define ALERTA_EMAIL_DESTINO)")
     asunto = re.sub(r"[\r\n]+", " ", asunto).strip()[:200]
     if prov == "resend":
-        return _resend(asunto, texto, html, destinos, reply_to)
+        return _resend(asunto, texto, html, destinos, reply_to, imagenes)
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = asunto, remitente(), ", ".join(destinos)
     if reply_to and _EMAIL.match(reply_to):
@@ -150,4 +172,7 @@ def enviar(asunto, texto, html=None, destinos=None, reply_to=None):
     msg.set_content(texto)
     if html:
         msg.add_alternative(html, subtype="html")
+        for i in (imagenes or []):
+            tipo, _, subtipo = i["tipo"].partition("/")
+            msg.get_payload()[-1].add_related(i["datos"], maintype=tipo, subtype=subtipo, cid=f"<{i['cid']}>", filename=i["nombre"])
     return _smtp(msg)
