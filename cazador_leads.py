@@ -186,7 +186,7 @@ class CazadorLeads:
     def _consultar_serpapi(self, serpapi_key, query, lat, lon, start, cache):
         """Una consulta a Google Maps (SerpAPI) con caché: si ya se hizo, no gasta crédito."""
         clave = f"gm|{query.lower()}|{lat:.4f},{lon:.4f}|{start}"
-        if cache:
+        if cache is not None:
             guardado = cache.get(clave)
             if guardado:
                 return json.loads(guardado), True
@@ -202,7 +202,7 @@ class CazadorLeads:
             if "hasn't returned any results" in str(data["error"]) or "no results" in str(data["error"]).lower():
                 return {"local_results": []}, False
             raise RuntimeError(f"SerpAPI: {data['error']}")
-        if cache:
+        if cache is not None:
             cache.set(clave, json.dumps({k: data.get(k) for k in ("local_results", "place_results")},
                                         ensure_ascii=False))
         self.creditos_usados += 1
@@ -386,6 +386,8 @@ class CazadorLeads:
                    email=email)
         ev = evaluar(neg, escaneo)
         ev["diagnostico"]["contactos"] = contactos
+        if negocio.get("clase_web") == "red" and escaneo:
+            ev["diagnostico"]["red_social"] = {k: escaneo.get(k) for k in ("url", "estado", "descripcion", "detalle")}
         ev["diagnostico"]["whatsapp_confirmado"] = whatsapp_confirmado
 
         lead = {

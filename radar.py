@@ -21,6 +21,7 @@ from sqlalchemy import insert, select, update
 
 import db
 import escaner
+import redes
 from cazador_leads import CazadorLeads
 
 BASE_DIR = Path(__file__).parent
@@ -112,8 +113,9 @@ def _ejecutar(job, ciudad, pais, sectores, cobertura, analizar_webs):
         if not grupos:
             raise RuntimeError(advertencias[-1] if advertencias else "Google Maps no devolvió negocios.")
 
-        # ---- 2. Escaneo de las webs existentes
+        # ---- 2. Escaneo de las webs existentes y lectura de los perfiles que Maps enlaza
         escaneos = {}
+        tareas = []  # (función, url)
         if analizar_webs:
             candidatos = sorted(
                 [n for _, ns in grupos for n in ns if n["clase_web"] == "propia"],
@@ -121,13 +123,19 @@ def _ejecutar(job, ciudad, pais, sectores, cobertura, analizar_webs):
             urls = list(dict.fromkeys(n["url"] for n in candidatos))[:cap_scan]
             if len(candidatos) > len(urls):
                 advertencias.append(f"Solo se analizaron {len(urls)} webs de {len(candidatos)} (límite por exploración).")
+            tareas += [(lambda u: escaner.escanear_web(u, ciudad), u) for u in urls]
+        perfiles = list(dict.fromkeys(n["url"] for _, ns in grupos for n in ns
+                                      if n["clase_web"] == "red" and redes.es_perfil_red(n["url"])))[:cap_scan]
+        tareas += [(redes.leer_perfil, u) for u in perfiles]
+        if tareas:
             hechos = 0
             with ThreadPoolExecutor(max_workers=8) as ex:
-                futuros = {ex.submit(escaner.escanear_web, u, ciudad): u for u in urls}
+                futuros = {ex.submit(fn, u): u for fn, u in tareas}
                 for f in as_completed(futuros):
                     escaneos[futuros[f]] = f.result()
                     hechos += 1
-                    _set(job, f"Analizando webs ({hechos}/{len(urls)})…", 45 + 40 * hechos / max(1, len(urls)))
+                    _set(job, f"Analizando webs y perfiles ({hechos}/{len(tareas)})…",
+                         45 + 40 * hechos / len(tareas))
 
         # ---- 3. Evaluar y seleccionar
         _set(job, "Detectando oportunidades…", 87)

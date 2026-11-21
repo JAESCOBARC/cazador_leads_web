@@ -448,3 +448,159 @@ def test_radar_guarda_email_encontrado_en_la_web(cliente, monkeypatch):
     assert lead["email"] == "info@vetcontacto.co"
     assert lead["diagnostico"]["contactos"]["emails"][0]["fuente"].endswith("/aviso-legal")
     assert cliente.get(f"/api/leads/{lead['id']}/mensaje").get_json()["canal"] == "email"
+
+
+# ------------------------------------------------------------------ Instagram / Facebook y mapa
+
+import redes  # noqa: E402
+
+
+def test_es_perfil_red():
+    assert redes.es_perfil_red("https://www.instagram.com/vetcorales/")
+    assert redes.es_perfil_red("https://m.facebook.com/vetcorales")
+    assert not redes.es_perfil_red("https://linktr.ee/vetcorales")
+    assert not redes.es_perfil_red("https://instagram.com.malo.co/x")
+
+
+def test_extrae_contactos_de_una_bio():
+    bio = ("1.2K Followers, 300 Following - Vet Corales. Citas: +57 310 555 1002 · info@vetcorales.co · "
+           "escríbenos wa.me/573105551002 · desde 2019 2020 2021")
+    c = redes.extraer_de_texto(bio, "https://instagram.com/vetcorales")
+    assert [e["valor"] for e in c["emails"]] == ["info@vetcorales.co"]
+    assert [w["numero"] for w in c["whatsapps"]] == ["573105551002"]
+    assert [t["digitos"] for t in c["telefonos"]] == ["573105551002"]  # los años y los seguidores no cuentan
+    assert redes.extraer_de_texto("96.203 seguidores · 766 personas hablan de esto", "x")["telefonos"] == []
+
+
+def test_leer_perfil_usa_la_bio_publica(monkeypatch):
+    html = '<html><head><meta property="og:description" content="Vet Corales. Citas al 300 111 2233 - hola@vetcorales.co"></head></html>'
+    monkeypatch.setattr(escaner, "descargar", lambda u, timeout=None: {"estado": "ok", "html": html, "url_final": u})
+    r = redes.leer_perfil("https://www.facebook.com/vetcorales")
+    assert r["estado"] == "ok" and r["contactos"]["emails"][0]["valor"] == "hola@vetcorales.co"
+    assert redes.leer_perfil("https://miweb.com")["estado"] == "no_aplica"
+
+
+def test_perfil_con_muro_de_login_no_inventa_nada(monkeypatch):
+    html = '<html><head><meta property="og:description" content="Inicia sesión o regístrate para verlo"></head></html>'
+    monkeypatch.setattr(escaner, "descargar", lambda u, timeout=None: {"estado": "ok", "html": html, "url_final": u})
+    c = redes.leer_perfil("https://m.facebook.com/x")["contactos"]
+    assert c == {"emails": [], "whatsapps": [], "telefonos": []}
+
+
+def test_coincidencia_evita_homonimos():
+    assert redes.coincide("Clínica Veterinaria Patitas", "Patitas Vet (@patitasvet) · Pereira")
+    assert not redes.coincide("Clínica Veterinaria Patitas", "Mascotas Felices - Cali")
+    assert redes.coincide("Vet Corales", "Vet Corales | Facebook")
+
+
+class _Resp:
+    def __init__(self, data):
+        self._d = data
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._d
+
+
+def test_buscar_perfiles_filtra_homonimos_y_usa_cache(monkeypatch):
+    os.environ["SERPAPI_KEY"] = "clave-falsa"
+    llamadas = []
+    data = {"organic_results": [
+        {"link": "https://www.instagram.com/patitasvet/", "title": "Patitas Vet (@patitasvet)",
+         "snippet": "300 Followers - Veterinaria en Pereira. Citas: +57 311 222 3344. patitas@gmail.com"},
+        {"link": "https://www.facebook.com/otraclinica", "title": "Otra Clínica", "snippet": "tel: 300 999 0000 otra@x.co"},
+        {"link": "https://www.patitas.com", "title": "Patitas Vet", "snippet": "web propia, no es una red"},
+    ]}
+    monkeypatch.setattr(redes.requests, "get", lambda *a, **k: (llamadas.append(k), _Resp(data))[1])
+
+    class Cache(dict):
+        def set(self, k, v):
+            self[k] = v
+
+    cache = Cache()
+    r = redes.buscar_perfiles("Clínica Patitas Vet", "Pereira", cache=cache)
+    assert r["creditos"] == 1 and len(llamadas) == 1
+    assert [p["red"] for p in r["perfiles"]] == ["instagram"]
+    assert [e["valor"] for e in r["emails"]] == ["patitas@gmail.com"]
+    assert r["telefonos"][0]["digitos"] == "573112223344"
+    r2 = redes.buscar_perfiles("Clínica Patitas Vet", "Pereira", cache=cache)  # misma consulta: caché
+    assert r2["creditos"] == 0 and len(llamadas) == 1 and r2["emails"] == r["emails"]
+
+
+def test_buscar_perfiles_sin_clave():
+    os.environ["SERPAPI_KEY"] = "tu_api_key_aqui"
+    with pytest.raises(redes.RedesError):
+        redes.buscar_perfiles("X", "Y")
+    os.environ["SERPAPI_KEY"] = "clave-falsa"
+
+
+def test_api_buscar_redes_actualiza_el_lead(cliente, monkeypatch):
+    from cazador_leads import CazadorLeads
+
+    def falso(self, paginas=None, puntos=1, cache=None, progreso=None):
+        self.geo = {"lat": 3.0, "lon": 3.0, "display_name": "X"}
+        self.creditos_usados = 1
+        return [dict(NEGOCIOS_FALSOS[0], nombre="Mascotas Felices Pasto", telefono="")]
+
+    monkeypatch.setattr(CazadorLeads, "buscar_en_google", falso)
+    r = cliente.post("/api/radar", headers=H, json={"ciudad": "Pasto", "pais": "Colombia", "sectores": ["veterinarias"]})
+    d = esperar(cliente, r.get_json()["job_id"])
+    lead = d["resultado"]["leads"][0]
+    assert not lead["email"] and not lead["telefono"] and lead["canal_recomendado"] != "email"
+
+    resultado = {"perfiles": [{"url": "https://www.instagram.com/mascotasfelicespasto/", "red": "instagram", "titulo": "t", "snippet": "s"}],
+                 "emails": [{"valor": "hola@mascotasfelices.co", "fuente": "https://www.instagram.com/mascotasfelicespasto/", "via": "bio pública (Google)"}],
+                 "whatsapps": [], "telefonos": [{"numero": "+57 320 111 2222", "digitos": "573201112222", "fuente": "x"}], "creditos": 1}
+    monkeypatch.setattr(redes, "buscar_perfiles", lambda nombre, ciudad, cache=None: resultado)
+    assert cliente.post(f"/api/leads/{lead['id']}/redes").status_code == 403  # CSRF
+    out = cliente.post(f"/api/leads/{lead['id']}/redes", headers=H).get_json()
+    assert out["email"] == "hola@mascotasfelices.co"
+    assert out["redes_sociales"].endswith("/mascotasfelicespasto/")
+    assert out["telefono"] == "+57 320 111 2222"
+    assert out["diagnostico"]["redes"]["creditos"] == 1
+    assert out["diagnostico"]["contactos"]["emails"][0]["valor"] == "hola@mascotasfelices.co"
+    assert cliente.get(f"/api/leads/{lead['id']}/mensaje").get_json()["canal"] == "email"
+    # una nueva consulta no pisa un email ya guardado
+    resultado["emails"] = [{"valor": "otro@x.co", "fuente": "u", "via": "v"}]
+    assert cliente.post(f"/api/leads/{lead['id']}/redes", headers=H).get_json()["email"] == "hola@mascotasfelices.co"
+
+
+def test_api_buscar_redes_error_de_serpapi(cliente, monkeypatch):
+    lid = cliente.get("/api/leads").get_json()["leads"][0]["id"]
+
+    def falla(*a, **k):
+        raise redes.RedesError("SERPAPI_KEY no configurada en .env")
+
+    monkeypatch.setattr(redes, "buscar_perfiles", falla)
+    r = cliente.post(f"/api/leads/{lid}/redes", headers=H)
+    assert r.status_code == 502 and "SERPAPI_KEY" in r.get_json()["error"]
+
+
+def test_radar_lee_el_perfil_publicado_en_maps(cliente, monkeypatch):
+    from cazador_leads import CazadorLeads
+
+    def falso(self, paginas=None, puntos=1, cache=None, progreso=None):
+        self.geo = {"lat": 3.0, "lon": 3.0, "display_name": "X"}
+        self.creditos_usados = 1
+        return [dict(NEGOCIOS_FALSOS[1], nombre="Vet Perfil FB", telefono="+57 301 777 8899",
+                     url="https://www.facebook.com/vetperfil", redes_sociales="https://www.facebook.com/vetperfil")]
+
+    html = '<html><head><meta property="og:description" content="Vet Perfil. Escríbenos: contacto@vetperfil.co"></head></html>'
+    monkeypatch.setattr(CazadorLeads, "buscar_en_google", falso)
+    monkeypatch.setattr(escaner, "descargar", lambda u, timeout=None: {"estado": "ok", "html": html, "url_final": u})
+    r = cliente.post("/api/radar", headers=H, json={"ciudad": "Ipiales", "pais": "Colombia", "sectores": ["veterinarias"]})
+    d = esperar(cliente, r.get_json()["job_id"])
+    lead = d["resultado"]["leads"][0]
+    assert lead["email"] == "contacto@vetperfil.co" and lead["diagnostico"]["red_social"]["estado"] == "ok"
+
+
+def test_geocodificar_para_mover_el_mapa(cliente, monkeypatch):
+    from cazador_leads import CazadorLeads
+    monkeypatch.setattr(CazadorLeads, "geocodificar",
+                        lambda self, c, p: {"lat": 37.18, "lon": -3.6, "display_name": "Granada, España"} if c == "Granada" else None)
+    ok = cliente.get("/api/geocodificar?ciudad=Granada&pais=España")
+    assert ok.status_code == 200 and ok.get_json()["lat"] == 37.18
+    assert cliente.get("/api/geocodificar?ciudad=Nadaland&pais=X").status_code == 404
+    assert cliente.get("/api/geocodificar?ciudad=Granada").status_code == 400

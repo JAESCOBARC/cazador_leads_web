@@ -269,6 +269,7 @@
             <div class="aviso error" id="dlgError" role="alert"></div>
             <div id="dlgInfo"></div>
             <div id="dlgDiag"></div>
+            <div id="dlgRedes"></div>
 
             <details class="msg-box" id="dlgMsg">
                 <summary>Mensaje sugerido</summary>
@@ -485,6 +486,8 @@
     let RADAR = { leads: [], sectores: [], sector: '', opp: '' };
     let mapa = null, capaPuntos = null, marcadores = {}, timerRadar = null;
 
+    const urlRed = (u) => /^https:\/\/([a-z0-9-]+\.)*(instagram|facebook)\.com\//i.test(u || '');
+
     function tagOpp(o) {
         const d = OPP[o.tipo] || { txt: o.titulo, cls: 'opp-gris' };
         return `<span class="opp ${d.cls}${o.verificado ? '' : ' sinverif'}" title="${o.verificado ? 'Verificado con datos reales' : 'Por confirmar'}">${escapeHtml(d.txt)}${o.verificado ? '' : ' ?'}</span>`;
@@ -566,6 +569,23 @@
         $('radarHint').style.display = 'none';
     }
 
+    // El mapa viaja a la ciudad escrita (al salir de los campos y al lanzar el escaneo)
+    let ultimaGeo = '';
+    async function moverMapa() {
+        const ciudad = $('ciudad').value.trim(), pais = $('pais').value.trim();
+        const clave = (ciudad + '|' + pais).toLowerCase();
+        if (!ciudad || !pais || clave === ultimaGeo) return;
+        ultimaGeo = clave;
+        iniciarMapa();
+        try {
+            const g = await api('/api/geocodificar?' + new URLSearchParams({ ciudad, pais }));
+            if (mapa) { mapa.invalidateSize(); mapa.flyTo([g.lat, g.lon], 12, { duration: 1.4 }); }
+            $('radarHint').textContent = `${ciudad}, ${pais} · pulsa Escanear`;
+        } catch (e) { ultimaGeo = ''; }
+    }
+    $('ciudad').addEventListener('change', moverMapa);
+    $('pais').addEventListener('change', moverMapa);
+
     async function escanear() {
         const ciudad = $('ciudad').value.trim(), pais = $('pais').value.trim();
         const errorDiv = $('error'), btn = $('searchBtn');
@@ -580,7 +600,7 @@
         $('radarBarra').style.width = '3%';
         $('radarEtapa').textContent = 'Lanzando el radar…';
         btn.disabled = true; btn.classList.add('cargando'); btn.setAttribute('aria-busy', 'true');
-        iniciarMapa();
+        moverMapa();
         try {
             const { job_id } = await api('/api/radar', json('POST', {
                 ciudad, pais, sectores: [...SEL], cobertura: $('cobertura').value,
@@ -696,6 +716,7 @@
             <div class="lead-acciones">
                 ${tel ? `<a class="btn btn-clear btn-sm" href="tel:${escapeHtml(tel)}" style="text-decoration:none">${icono('phone')} <span>Llamar</span></a>` : ''}
                 ${wa ? `<a class="btn btn-clear btn-sm" href="${escapeHtml(wa)}" target="_blank" rel="noopener" style="text-decoration:none">${icono('message')} <span>WhatsApp${(l.diagnostico || {}).whatsapp_confirmado ? '' : ' (sin confirmar)'}</span></a>` : ''}
+                ${urlRed(l.redes_sociales) ? `<a class="btn btn-clear btn-sm" href="${escapeHtml(l.redes_sociales)}" target="_blank" rel="noopener" style="text-decoration:none"><span>Perfil</span></a>` : ''}
                 <button class="expand-btn" aria-expanded="false" data-det="${l.id}"><span class="expand-label">Ver análisis</span>${icono('chevron', 'sm chev')}</button>
                 <button class="btn btn-primario btn-sm" onclick="abrirLead(${Number(l.id)}, true)">${icono('check')} <span>Contactar</span></button>
             </div>
@@ -742,6 +763,10 @@
         (c.whatsapps || []).forEach(x => it.push(li(true, `WhatsApp publicado: +${x.numero} (${fuente(x.fuente)})`)));
         if (e && e.estado === 'ok' && !(c.emails || []).length && !(c.whatsapps || []).length)
             it.push(li(null, 'No se encontró email ni WhatsApp en su web (portada, contacto o aviso legal)'));
+        if (d.red_social && d.red_social.estado === 'ok' && !(c.emails || []).length && !(c.whatsapps || []).length)
+            it.push(li(null, 'Su perfil público no muestra email ni WhatsApp en la bio. Puedes buscarlo en el lead (1 crédito)'));
+        else if (d.red_social && d.red_social.estado !== 'ok')
+            it.push(li(null, 'No se pudo leer su perfil de red social (suele pedir iniciar sesión)'));
         (d.seo_local || []).forEach(t => it.push(li(false, t.charAt(0).toUpperCase() + t.slice(1))));
         return `<ul class="dg">${it.join('')}</ul>`;
     }
@@ -762,6 +787,8 @@
         ocultar($('error'));
         if (capaPuntos) capaPuntos.clearLayers();
         $('radarHint').style.display = '';
+        $('radarHint').textContent = 'Escribe tu ciudad y la escaneamos';
+        ultimaGeo = '';
         $('ciudad').focus();
     }
     $('pais').addEventListener('keypress', (e) => { if (e.key === 'Enter') escanear(); });
@@ -858,6 +885,7 @@
             ? `<div class="opps">${l.oportunidades.map(tagOpp).join('')}</div>
                <details class="msg-box"><summary>Análisis del negocio${l.score ? ` · puntuación ${l.score}` : ''}</summary>${detalleHtml(Object.assign({}, l, { cuerpo: '' }))}</details>`
             : '';
+        pintarRedes(l);
         $('dlgMsg').hidden = false;
         $('dlgMsg').open = !!comoContacto;
         $('mAngulo').innerHTML = (l.oportunidades.length ? l.oportunidades : [{ tipo: 'sin_web' }])
@@ -930,6 +958,42 @@
     $('dlgCerrar').addEventListener('click', () => dlg.close());
     $('dlgCancelar').addEventListener('click', () => dlg.close());
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+
+    function pintarRedes(l) {
+        const r = (l.diagnostico || {}).redes;
+        let res = '';
+        if (r) {
+            const li = (t) => `<li>${t}</li>`;
+            const items = [
+                ...r.perfiles.filter(p => urlRed(p.url)).map(p => li(`${p.red === 'instagram' ? 'Instagram' : 'Facebook'}: <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">${escapeHtml(p.url.replace(/^https:\/\/(www\.)?/, ''))}</a>`)),
+                ...r.emails.map(e => li(`Email publicado en su bio: <strong>${escapeHtml(e.valor)}</strong>`)),
+                ...r.whatsapps.map(w => li(`WhatsApp publicado en su bio: <strong>+${escapeHtml(w.numero)}</strong>`)),
+                ...r.telefonos.map(t => li(`Teléfono publicado en su bio: <strong>${escapeHtml(t.numero)}</strong>`))
+            ];
+            res = items.length
+                ? `<ul class="dg" style="list-style:disc;padding-left:18px">${items.join('')}</ul><p class="ayuda">Verifica que el perfil sea realmente de este negocio antes de escribir.</p>`
+                : '<p class="ayuda">No se encontró un perfil con datos de contacto públicos para este negocio.</p>';
+        }
+        $('dlgRedes').innerHTML = `<details class="msg-box"${r ? ' open' : ''}><summary>Instagram y Facebook</summary>
+            <div class="msg-acciones">
+                ${urlRed(l.redes_sociales) ? `<a class="btn btn-clear btn-sm" href="${escapeHtml(l.redes_sociales)}" target="_blank" rel="noopener" style="text-decoration:none"><span>Abrir perfil</span></a>` : ''}
+                <button type="button" class="btn btn-clear btn-sm" id="dlgRedesBtn"><span>${r ? 'Buscar de nuevo' : 'Buscar en Instagram/Facebook'} (1 crédito)</span></button>
+            </div>${res}</details>`;
+        $('dlgRedesBtn').addEventListener('click', buscarRedes);
+    }
+    async function buscarRedes() {
+        const btn = $('dlgRedesBtn');
+        ocultar($('dlgError'));
+        btn.disabled = true; btn.classList.add('cargando');
+        try {
+            await api(`/api/leads/${leadActual.id}/redes`, json('POST', {}));
+            await abrirLead(leadActual.id, false);
+            if ($('vista-leads').classList.contains('active')) cargarLeads();
+        } catch (e) {
+            aviso($('dlgError'), 'error', e.message);
+            btn.disabled = false; btn.classList.remove('cargando');
+        }
+    }
 
     // Mensaje bajo demanda: ángulo, canal, paso de la secuencia y variante A/B
     let MSG = null;

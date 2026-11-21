@@ -24,6 +24,8 @@ import db
 import escaner
 import mensajes
 import radar
+import redes
+from cazador_leads import CazadorLeads
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 # Sin CORS: la interfaz se sirve desde este mismo origen.
@@ -132,6 +134,22 @@ def yo():
 def sectores():
     return jsonify({'sectores': escaner.SECTORES, 'coberturas': {
         k: {'puntos': p, 'paginas': g, 'creditos_por_sector': p * g} for k, (p, g) in radar.COBERTURAS.items()}})
+
+
+@app.route('/api/geocodificar')
+def geocodificar():
+    """Resuelve ciudad+país a coordenadas (para mover el mapa). Usa la misma caché que el radar."""
+    ciudad = (request.args.get('ciudad') or '').strip()
+    pais = (request.args.get('pais') or '').strip()
+    if not ciudad or not pais:
+        return jsonify({'error': 'Ciudad y país son requeridos'}), 400
+    try:
+        geo = CazadorLeads().geocodificar(ciudad, pais)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'error': f'No se pudo ubicar: {e}'}), 502
+    if not geo:
+        return jsonify({'error': 'Ubicación no encontrada'}), 404
+    return jsonify({'lat': geo['lat'], 'lon': geo['lon'], 'nombre': geo['display_name']})
 
 
 @app.route('/api/radar', methods=['POST'])
@@ -370,6 +388,52 @@ def registrar_toque(lead_id):
             canal=canal, nota=(d.get('nota') or '')[:2000], fecha=db.ahora(),
             plantilla=(d.get('plantilla') or '')[:60] or None))
     return detalle_lead(lead_id)
+
+
+@app.route('/api/leads/<int:lead_id>/redes', methods=['POST'])
+def buscar_redes(lead_id):
+    """Busca el Instagram/Facebook del negocio en Google (1 crédito de SerpAPI, con caché) y guarda
+    lo que el propio negocio publicó en su bio: perfil, email, WhatsApp, teléfono."""
+    L = db.leads
+    with db.engine.connect() as conn:
+        r = conn.execute(select(L).where(L.c.id == lead_id)).mappings().first()
+    if not r:
+        return jsonify({'error': 'Lead no encontrado'}), 404
+    try:
+        res = redes.buscar_perfiles(r['nombre'], r['ciudad'] or '', cache=radar.CacheDB())
+    except redes.RedesError as e:
+        return jsonify({'error': str(e)}), 502
+
+    diag = _json(r['diagnostico'], {})
+    cont = diag.setdefault('contactos', {'emails': [], 'whatsapps': []})
+    for e in res['emails']:
+        if e['valor'] not in {x['valor'] for x in cont.setdefault('emails', [])}:
+            cont['emails'].append(e)
+    for w in res['whatsapps']:
+        if w['numero'] not in {x['numero'] for x in cont.setdefault('whatsapps', [])}:
+            cont['whatsapps'].append(w)
+    cambios = {}
+    if res['perfiles'] and not r['redes_sociales']:
+        cambios['redes_sociales'] = res['perfiles'][0]['url'][:500]
+    if res['emails'] and not r['email']:
+        cambios['email'] = res['emails'][0]['valor']
+    if res['whatsapps'] and not diag.get('whatsapp_confirmado'):
+        cambios['whatsapp'] = res['whatsapps'][0]['link']
+        diag['whatsapp_confirmado'] = True
+    if res['telefonos'] and not r['telefono']:
+        cambios['telefono'] = res['telefonos'][0]['numero'][:60]
+    diag['redes'] = dict(res, consultado_en=db.ahora().isoformat())
+    cambios['diagnostico'] = json.dumps(diag, ensure_ascii=False)
+
+    fila = dict(r, **cambios)
+    fila['diagnostico'] = cambios['diagnostico']
+    cambios['canal_recomendado'] = mensajes.canal_para(radar.lead_desde_fila(fila))
+    cambios['actualizado_en'] = db.ahora()
+    with db.engine.begin() as conn:
+        conn.execute(update(L).where(L.c.id == lead_id).values(**cambios))
+    out = detalle_lead(lead_id).get_json()
+    out['redes_resultado'] = res
+    return jsonify(out)
 
 
 @app.route('/api/leads.csv')
