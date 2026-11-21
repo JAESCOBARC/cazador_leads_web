@@ -29,6 +29,8 @@ La app web escanea una ciudad por sectores y detecta qué le falta a cada negoci
 | Reputación | Rating < 4,2 con reseñas | Sí |
 | App de gestión | **Hipótesis** por tipo de negocio; se confirma en la primera conversación | No |
 
+**Contactos:** Google Maps (SerpAPI) solo da teléfono y web; nunca email. El email y el WhatsApp se leen de la web del propio negocio (portada y, si falta alguno, contacto / aviso legal / privacidad), solo si están publicados: `mailto:`, texto visible, emails ofuscados, protección de Cloudflare, datos estructurados y enlaces `wa.me`. Nunca se adivinan (`info@dominio`). Canal recomendado: WhatsApp publicado > email real > teléfono (WhatsApp sin confirmar). Cada dato guarda su fuente. Los negocios sin web solo tienen el teléfono de Maps.
+
 Cada lead recibe un score (demanda en Maps + oportunidades + alcanzabilidad + ticket del sector) y prioridad alta/media/baja.
 El ticket por sector es una estimación orientativa. El mini-caso solo aparece si defines `CASO_EXITO` (un caso real).
 Seguimiento: mensaje inicial → +3 días → +4 días → cierre. Cada plantilla (ángulo:canal:variante A/B) se mide en Analítica.

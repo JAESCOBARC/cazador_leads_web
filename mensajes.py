@@ -183,10 +183,13 @@ def variante_estable(clave):
 
 
 def canal_para(lead):
-    if lead.get("whatsapp") or lead.get("telefono"):
+    """WhatsApp publicado por el negocio > email real > teléfono (WhatsApp sin confirmar)."""
+    if lead.get("whatsapp") and (lead.get("diagnostico") or {}).get("whatsapp_confirmado"):
         return "whatsapp"
     if lead.get("email"):
         return "email"
+    if lead.get("whatsapp") or lead.get("telefono"):
+        return "whatsapp"
     return "telefono"
 
 

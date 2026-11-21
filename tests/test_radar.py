@@ -331,3 +331,120 @@ def test_mismo_negocio_en_dos_sectores_no_se_duplica(cliente, monkeypatch):
     assert d["estado"] == "listo", d
     assert [l["nombre"] for l in d["resultado"]["leads"]] == ["Negocio Compartido"]
     assert d["resultado"]["nuevos"] == 1
+
+
+# ------------------------------------------------------------------ email y WhatsApp desde la web
+
+def _cf(email, k=0x42):
+    return f"{k:02x}" + "".join(f"{ord(c) ^ k:02x}" for c in email)
+
+
+HTML_CONTACTOS = f"""<html><body>
+<a href="mailto:Ventas@MiClinica.com?subject=Hola">Escríbenos</a>
+<a href="https://wa.me/573001112233?text=hola">WhatsApp</a>
+<p>Atención: citas [at] miclinica [dot] com</p>
+<span class="__cf_email__" data-cfemail="{_cf('gerencia@miclinica.com')}">[email&#160;protected]</span>
+<img src="logo@2x.png"><p>plantilla: tuemail@tudominio.com y user@example.com y abc@sentry.io</p>
+<script>var x = "oculto@scripts.com";</script>
+</body></html>"""
+
+
+def test_extrae_emails_y_whatsapp_publicados():
+    emails, was = escaner.extraer_contactos_html(HTML_CONTACTOS, "https://miclinica.com/")
+    valores = {e["valor"] for e in emails}
+    assert {"ventas@miclinica.com", "citas@miclinica.com", "gerencia@miclinica.com"} <= valores
+    # basura descartada: imágenes, plantillas, ejemplos, sentry y contenido de <script>
+    assert not any(b in v for v in valores for b in ("2x.png", "tudominio", "example", "sentry", "scripts.com"))
+    assert [w["numero"] for w in was] == ["573001112233"] and was[0]["link"] == "https://wa.me/573001112233"
+
+
+def test_orden_prefiere_email_del_dominio_de_la_web():
+    html = '<a href="mailto:ventas@miclinica.com">x</a> <p>gmail: alguien@gmail.com</p>'
+    emails, _ = escaner.extraer_contactos_html(html, "https://miclinica.com/")
+    ordenados = escaner._ordenar_emails(emails + [{"valor": "otro@gmail.com", "fuente": "https://miclinica.com/", "via": "texto"}],
+                                        "https://miclinica.com/")
+    assert ordenados[0]["valor"] == "ventas@miclinica.com"
+
+
+def test_enlaces_de_contacto_y_aviso_legal_solo_del_mismo_dominio():
+    html = ('<a href="/aviso-legal">Aviso legal</a><a href="/contacto">Contacto</a>'
+            '<a href="https://otrositio.com/contacto">Ajeno</a><a href="/productos">Productos</a>')
+    enlaces = escaner._enlaces_contacto(html, "https://miclinica.com/")
+    assert enlaces == ["https://miclinica.com/aviso-legal", "https://miclinica.com/contacto"]
+
+
+def test_busca_el_email_en_el_aviso_legal(monkeypatch):
+    portada = '<html><body><a href="/aviso-legal">Aviso legal</a><p>Sin datos de contacto</p></body></html>'
+    legal = "<html><body><p>Titular: Clínica SL. Email de contacto: legal@miclinica.com</p></body></html>"
+    pedidas = []
+
+    def falso(url, timeout=(5, 9)):
+        pedidas.append(url)
+        return {"estado": "ok", "html": legal, "url_final": url}
+
+    monkeypatch.setattr(escaner, "descargar", falso)
+    c = escaner.buscar_contactos(portada, "https://miclinica.com/")
+    assert pedidas == ["https://miclinica.com/aviso-legal"]
+    assert c["emails"][0]["valor"] == "legal@miclinica.com"
+    assert c["emails"][0]["fuente"].endswith("/aviso-legal")
+
+
+def test_no_descarga_mas_paginas_si_ya_tiene_email_y_whatsapp(monkeypatch):
+    monkeypatch.setattr(escaner, "descargar", lambda *a, **k: pytest.fail("no debía descargar"))
+    c = escaner.buscar_contactos(HTML_CONTACTOS + '<a href="/aviso-legal">Aviso legal</a>', "https://miclinica.com/")
+    assert c["emails"] and c["whatsapps"]
+
+
+def test_sin_datos_publicados_no_se_inventa_nada(monkeypatch):
+    monkeypatch.setattr(escaner, "descargar", lambda *a, **k: {"estado": "error"})
+    c = escaner.buscar_contactos("<html><body>Hola <a href='/contacto'>Contacto</a></body></html>", "https://x.co/")
+    assert c == {"emails": [], "whatsapps": []}
+
+
+def test_lead_usa_email_y_whatsapp_de_la_web_y_recomienda_email_si_no_hay_whatsapp_confirmado():
+    from cazador_leads import CazadorLeads
+    cz = CazadorLeads()
+    cz.nicho, cz.ciudad, cz.pais = "clínicas veterinarias", "Pereira", "Colombia"
+    base = dict(NEGOCIOS_FALSOS[2], telefono="+57 300 999 8877")
+    # 1) la web publica email pero no WhatsApp -> canal email (el WhatsApp derivado del teléfono no está confirmado)
+    esc = escaneo_de(HTML_SIN_NADA)
+    esc["contactos"] = {"emails": [{"valor": "info@vetconweb.co", "fuente": "https://vetconweb.co/aviso-legal", "via": "texto"}],
+                        "whatsapps": []}
+    lead = cz.preparar_lead(base, 1, escaneo=esc)
+    assert lead["email_real"] == "info@vetconweb.co"
+    assert lead["whatsapp_confirmado"] is False and lead["canal_recomendado"] == "email"
+    assert lead["asunto"] and lead["diagnostico"]["contactos"]["emails"][0]["valor"] == "info@vetconweb.co"
+    # 2) la web publica WhatsApp -> canal whatsapp confirmado
+    esc2 = escaneo_de(HTML_SIN_NADA)
+    esc2["contactos"] = {"emails": [], "whatsapps": [{"numero": "573009998877", "link": "https://wa.me/573009998877", "fuente": "https://vetconweb.co/"}]}
+    lead2 = cz.preparar_lead(base, 1, escaneo=esc2)
+    assert lead2["whatsapp"] == "https://wa.me/573009998877" and lead2["whatsapp_confirmado"] is True
+    assert lead2["canal_recomendado"] == "whatsapp"
+    # 3) sin nada publicado: no hay email inventado
+    lead3 = cz.preparar_lead(base, 1, escaneo=escaneo_de(HTML_SIN_NADA))
+    assert lead3["email_real"] is None
+
+
+def test_radar_guarda_email_encontrado_en_la_web(cliente, monkeypatch):
+    from cazador_leads import CazadorLeads
+
+    def falso(self, paginas=None, puntos=1, cache=None, progreso=None):
+        self.geo = {"lat": 2.0, "lon": 2.0, "display_name": "X"}
+        self.creditos_usados = 1
+        return [dict(NEGOCIOS_FALSOS[2], nombre="Vet Contacto Web", telefono="+57 312 222 3344", url="https://vetcontacto.co")]
+
+    def escaneo(url, ciudad=""):
+        e = escaneo_de(HTML_SIN_NADA)
+        e["contactos"] = {"emails": [{"valor": "info@vetcontacto.co", "fuente": "https://vetcontacto.co/aviso-legal", "via": "texto"}],
+                          "whatsapps": []}
+        return e
+
+    monkeypatch.setattr(CazadorLeads, "buscar_en_google", falso)
+    monkeypatch.setattr(escaner, "escanear_web", escaneo)
+    r = cliente.post("/api/radar", headers=H, json={"ciudad": "Armenia", "pais": "Colombia", "sectores": ["veterinarias"]})
+    d = esperar(cliente, r.get_json()["job_id"])
+    assert d["estado"] == "listo", d
+    lead = d["resultado"]["leads"][0]
+    assert lead["email"] == "info@vetcontacto.co"
+    assert lead["diagnostico"]["contactos"]["emails"][0]["fuente"].endswith("/aviso-legal")
+    assert cliente.get(f"/api/leads/{lead['id']}/mensaje").get_json()["canal"] == "email"

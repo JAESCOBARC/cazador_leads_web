@@ -690,11 +690,12 @@
             <div class="opps">${l.oportunidades.map(tagOpp).join('')}</div>
             <div class="lead-info">
                 <div class="info-item"><span class="info-label">Teléfono</span><span class="info-value">${escapeHtml(l.telefono) || '—'}</span></div>
+                <div class="info-item"><span class="info-label">Email</span><span class="info-value">${l.email ? `<a href="mailto:${escapeHtml(l.email)}">${escapeHtml(l.email)}</a>` : '—'}</span></div>
                 <div class="info-item ancho"><span class="info-label">Ubicación</span><span class="info-value">${escapeHtml(l.direccion) || '—'}</span></div>
             </div>
             <div class="lead-acciones">
                 ${tel ? `<a class="btn btn-clear btn-sm" href="tel:${escapeHtml(tel)}" style="text-decoration:none">${icono('phone')} <span>Llamar</span></a>` : ''}
-                ${wa ? `<a class="btn btn-clear btn-sm" href="${escapeHtml(wa)}" target="_blank" rel="noopener" style="text-decoration:none">${icono('message')} <span>WhatsApp</span></a>` : ''}
+                ${wa ? `<a class="btn btn-clear btn-sm" href="${escapeHtml(wa)}" target="_blank" rel="noopener" style="text-decoration:none">${icono('message')} <span>WhatsApp${(l.diagnostico || {}).whatsapp_confirmado ? '' : ' (sin confirmar)'}</span></a>` : ''}
                 <button class="expand-btn" aria-expanded="false" data-det="${l.id}"><span class="expand-label">Ver análisis</span>${icono('chevron', 'sm chev')}</button>
                 <button class="btn btn-primario btn-sm" onclick="abrirLead(${Number(l.id)}, true)">${icono('check')} <span>Contactar</span></button>
             </div>
@@ -735,6 +736,12 @@
             it.push(li(!!e.schema_local, 'Datos estructurados de negocio local'));
             it.push(li(!!e.mapa_embebido, 'Mapa de Google en la web'));
         }
+        const c = d.contactos || {};
+        const fuente = (u) => { try { const p = new URL(u); return p.hostname + (p.pathname !== '/' ? p.pathname : ''); } catch (_) { return u; } };
+        (c.emails || []).forEach(x => it.push(li(true, `Email publicado: ${x.valor} (${fuente(x.fuente)})`)));
+        (c.whatsapps || []).forEach(x => it.push(li(true, `WhatsApp publicado: +${x.numero} (${fuente(x.fuente)})`)));
+        if (e && e.estado === 'ok' && !(c.emails || []).length && !(c.whatsapps || []).length)
+            it.push(li(null, 'No se encontró email ni WhatsApp en su web (portada, contacto o aviso legal)'));
         (d.seo_local || []).forEach(t => it.push(li(false, t.charAt(0).toUpperCase() + t.slice(1))));
         return `<ul class="dg">${it.join('')}</ul>`;
     }

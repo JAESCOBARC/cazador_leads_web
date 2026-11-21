@@ -13,6 +13,7 @@ Reglas de honestidad (CLAUDE.md: "0 falsos positivos"):
     de negocio: no se puede detectar desde fuera si usan un sistema de gestión.
 """
 
+import html as html_lib
 import ipaddress
 import json
 import re
@@ -129,6 +130,10 @@ def descargar(url, timeout=(5, 9)):
     actual = url
     try:
         for _ in range(MAX_REDIRECCIONES + 1):
+            try:
+                socket.getaddrinfo(urlparse(actual).hostname or "", None)
+            except (socket.gaierror, UnicodeError):
+                return {"estado": "error", "url_final": actual, "detalle": "El dominio no existe o no responde"}
             if not url_segura(actual):
                 return {"estado": "insegura", "url_final": actual, "detalle": "Dirección no permitida"}
             r = requests.get(actual, headers={"User-Agent": UA, "Accept-Language": "es"},
@@ -214,6 +219,138 @@ def analizar_html(html, ciudad=""):
     }
 
 
+# ----------------------------------------------------------------- email y WhatsApp de la web
+# Solo se devuelven datos que el propio negocio publicó en su web (portada, contacto, aviso legal,
+# política de privacidad). Nunca se adivinan ni se construyen (info@dominio...).
+
+_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}")
+_EMAIL_OFUSCADO = re.compile(
+    r"([A-Za-z0-9._%+\-]{1,64})\s*(?:\(at\)|\[at\]|\(arroba\)|\[arroba\])\s*"
+    r"([A-Za-z0-9\-]+(?:\s*(?:\(dot\)|\[dot\]|\(punto\)|\[punto\]|\.)\s*[A-Za-z0-9\-]+)+)", re.I)
+_WHATSAPP = re.compile(
+    r"(?:wa\.me/|(?:api|web)\.whatsapp\.com/send/?\?[^\"'\s<>]*?phone=|whatsapp://send\?[^\"'\s<>]*?phone=)"
+    r"\+?(\d{8,15})", re.I)
+_EMAIL_BASURA = ("sentry", "wixpress", "example.", "ejemplo", "tudominio", "tuemail", "tu@", "usuario@",
+                 "dominio.", "domain.", "email@", "correo@correo", "yourname", "nombre@", "name@",
+                 "@2x", "u003e", "noreply", "no-reply", "godaddy", "wordpress.", "schema.org")
+_EXT_NO_EMAIL = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js", ".woff", ".ico")
+_GRATIS = ("gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "yahoo.es", "live.com", "icloud.com")
+_ENLACE_CONTACTO = re.compile(r"aviso[-_ ]?legal|legal|contact|privacid|privacy|pol(i|%C3%AD)tica|nosotros|"
+                              r"quienes|terminos|condiciones", re.I)
+_LOCALES_UTILES = ("info", "contacto", "contact", "hola", "ventas", "comercial", "administracion", "gerencia",
+                   "recepcion", "citas", "reservas", "atencion", "clientes")
+_SEGUNDO_NIVEL = ("com", "co", "org", "net", "edu", "gob", "gov", "ac")
+
+
+def _dominio_base(host):
+    etiquetas = (host or "").lower().replace("www.", "").split(".")
+    if len(etiquetas) >= 3 and etiquetas[-2] in _SEGUNDO_NIVEL and len(etiquetas[-1]) == 2:
+        return ".".join(etiquetas[-3:])
+    return ".".join(etiquetas[-2:])
+
+
+def _cfemail(hexa):
+    """Decodifica la protección de email de Cloudflare (data-cfemail)."""
+    try:
+        k = int(hexa[:2], 16)
+        return "".join(chr(int(hexa[i:i + 2], 16) ^ k) for i in range(2, len(hexa), 2))
+    except ValueError:
+        return ""
+
+
+def _email_valido(e):
+    e = e.strip().strip(".,;:<>()[]'\"").lower()
+    if not _EMAIL.fullmatch(e) or e.endswith(_EXT_NO_EMAIL) or any(b in e for b in _EMAIL_BASURA):
+        return None
+    return e
+
+
+def extraer_contactos_html(html, fuente):
+    """Emails y WhatsApps publicados en una página. Devuelve ([{valor, fuente, via}], [{numero, fuente}])."""
+    if not html:
+        return [], []
+    crudo = html_lib.unescape(html)
+    emails, vistos = [], set()
+
+    def agregar(valor, via):
+        v = _email_valido(valor)
+        if v and v not in vistos:
+            vistos.add(v)
+            emails.append({"valor": v, "fuente": fuente, "via": via})
+
+    for m in re.finditer(r"mailto:([^\"'?\s<>]+)", crudo, re.I):
+        agregar(m.group(1), "mailto")
+    for m in re.finditer(r"data-cfemail=[\"']([0-9a-fA-F]+)[\"']", crudo):
+        agregar(_cfemail(m.group(1)), "cloudflare")
+    for m in re.finditer(r"[\"']email[\"']\s*:\s*[\"']([^\"']+)[\"']", crudo, re.I):
+        agregar(m.group(1), "datos estructurados")
+    visible = re.sub(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", " ", crudo, flags=re.I | re.S)
+    for m in _EMAIL.finditer(visible):
+        agregar(m.group(0), "texto")
+    for m in _EMAIL_OFUSCADO.finditer(visible):
+        dominio = re.sub(r"\s*(\(dot\)|\[dot\]|\(punto\)|\[punto\])\s*", ".", m.group(2), flags=re.I).replace(" ", "")
+        agregar(f"{m.group(1)}@{dominio}", "texto")
+
+    was, vistos_wa = [], set()
+    for m in _WHATSAPP.finditer(crudo):
+        n = m.group(1)
+        if n not in vistos_wa:
+            vistos_wa.add(n)
+            was.append({"numero": n, "link": f"https://wa.me/{n}", "fuente": fuente})
+    return emails, was
+
+
+def _enlaces_contacto(html, url_base, maximo=3):
+    """Enlaces internos a contacto / aviso legal / privacidad (aviso legal primero)."""
+    base = _dominio_base(urlparse(url_base).hostname)
+    cand = []
+    for m in re.finditer(r"<a\b[^>]*?href=[\"']([^\"'#]+)[\"'][^>]*>(.*?)</a>", html or "", re.I | re.S):
+        href, texto = m.group(1).strip(), re.sub(r"<[^>]+>", " ", m.group(2))
+        if href.lower().startswith(("mailto:", "tel:", "javascript:")):
+            continue
+        absoluto = urljoin(url_base, href)
+        p = urlparse(absoluto)
+        if p.scheme not in ("http", "https") or _dominio_base(p.hostname) != base:
+            continue
+        if _ENLACE_CONTACTO.search(p.path) or _ENLACE_CONTACTO.search(texto):
+            prioridad = 0 if re.search(r"legal", p.path + texto, re.I) else 1 if re.search(r"contact", p.path + texto, re.I) else 2
+            cand.append((prioridad, absoluto.split("#")[0]))
+    out = []
+    for _, u in sorted(cand, key=lambda x: x[0]):
+        if u not in out and u.rstrip("/") != url_base.rstrip("/"):
+            out.append(u)
+    return out[:maximo]
+
+
+def _ordenar_emails(emails, url_web):
+    base = _dominio_base(urlparse(url_web).hostname)
+
+    def puntos(e):
+        local, dom = e["valor"].split("@", 1)
+        p = 3 if _dominio_base(dom) == base else 0
+        p += 2 if e["via"] == "mailto" else 0
+        p += 1 if local in _LOCALES_UTILES else 0
+        p += 1 if "legal" in e["fuente"].lower() or "contact" in e["fuente"].lower() else 0
+        return -p
+    return sorted(emails, key=puntos)[:3]
+
+
+def buscar_contactos(html_portada, url_portada, max_paginas=3):
+    """Busca email y WhatsApp en la portada y, si falta alguno, en contacto / aviso legal / privacidad."""
+    emails, was = extraer_contactos_html(html_portada, url_portada)
+    if not (emails and was):
+        for enlace in _enlaces_contacto(html_portada, url_portada, max_paginas):
+            d = descargar(enlace, timeout=(4, 6))
+            if d["estado"] != "ok":
+                continue
+            e2, w2 = extraer_contactos_html(d.get("html", ""), d.get("url_final") or enlace)
+            emails += [e for e in e2 if e["valor"] not in {x["valor"] for x in emails}]
+            was += [w for w in w2 if w["numero"] not in {x["numero"] for x in was}]
+            if emails and was:
+                break
+    return {"emails": _ordenar_emails(emails, url_portada), "whatsapps": was[:2]}
+
+
 def escanear_web(url, ciudad=""):
     """Descarga y analiza una web. Siempre devuelve un dict (nunca lanza)."""
     d = descargar(url)
@@ -222,6 +359,10 @@ def escanear_web(url, ciudad=""):
            "https": str(d.get("url_final", "")).startswith("https://"), "ssl_error": d.get("ssl_error", False)}
     if d["estado"] == "ok":
         out.update(analizar_html(d.get("html", ""), ciudad))
+        try:
+            out["contactos"] = buscar_contactos(d.get("html", ""), d.get("url_final") or url)
+        except Exception:  # noqa: BLE001 - nunca debe romper el escaneo de la web
+            out["contactos"] = {"emails": [], "whatsapps": []}
     return out
 
 

@@ -198,7 +198,7 @@ def _claves_existentes():
 
 
 def _columnas_diagnostico(l):
-    return dict(
+    cols = dict(
         rating=l.get("rating"), resenas=l.get("resenas"), tipo=(l.get("tipo") or "")[:160],
         lat=l.get("lat"), lon=l.get("lon"), web_url=(l.get("web_url") or "")[:500],
         tiene_web=l.get("tiene_web"), maps_url=(l.get("maps_url") or "")[:500], score=l.get("score"),
@@ -207,6 +207,12 @@ def _columnas_diagnostico(l):
         diagnostico=json.dumps(l.get("diagnostico") or {}, ensure_ascii=False),
         escaneado_en=db.ahora(),
     )
+    # Un email/WhatsApp publicado por el negocio refresca el lead; si no se encontró, no pisa lo guardado
+    if l.get("email_real"):
+        cols["email"] = l["email_real"]
+    if (l.get("diagnostico") or {}).get("whatsapp_confirmado") and l.get("whatsapp"):
+        cols["whatsapp"] = l["whatsapp"]
+    return cols
 
 
 def guardar_leads(leads, user_id=None):
@@ -227,14 +233,16 @@ def guardar_leads(leads, user_id=None):
                              .values(**cols, actualizado_en=db.ahora()))
                 salida.append({"id": existente.id, "estado": existente.estado, "repetido": True})
                 continue
-            res = conn.execute(insert(db.leads).values(
+            valores = dict(
                 clave=clave, nombre=l["nombre"], telefono=_limpio(l.get("telefono")),
                 email=l.get("email_real") or "", whatsapp=l.get("whatsapp") or "",
                 redes_sociales=l.get("redes_sociales") or "", direccion=_limpio(l.get("direccion")),
                 nicho=l["nicho"], ciudad=l["ciudad"], pais=l["pais"],
                 canal_recomendado=l.get("canal_recomendado"), asunto=l.get("asunto") or "",
                 cuerpo=l.get("cuerpo") or "", plantilla=l.get("plantilla"), estado="nuevo",
-                creado_en=db.ahora(), actualizado_en=db.ahora(), **cols))
+                creado_en=db.ahora(), actualizado_en=db.ahora())
+            valores.update(cols)
+            res = conn.execute(insert(db.leads).values(**valores))
             salida.append({"id": res.inserted_primary_key[0], "estado": "nuevo", "repetido": False})
     return salida
 

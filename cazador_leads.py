@@ -371,14 +371,22 @@ class CazadorLeads:
         """Evalúa las oportunidades del negocio y genera su mensaje (ángulo principal,
         canal real disponible). Devuelve el lead listo para guardar/mostrar."""
         telefono = negocio.get("telefono") or "N/A"
-        whatsapp = negocio.get("whatsapp")
-        whatsapp_confirmado = bool(whatsapp)
+        # Contactos publicados por el propio negocio en su web (portada, contacto, aviso legal)
+        contactos = (escaneo or {}).get("contactos") or {}
+        email_web = (contactos.get("emails") or [{}])[0].get("valor")
+        wa_web = (contactos.get("whatsapps") or [{}])[0].get("link")
+
+        whatsapp = negocio.get("whatsapp") or wa_web
+        whatsapp_confirmado = bool(whatsapp)  # publicado por el negocio (Maps o su web)
         if not whatsapp:
             whatsapp = self._telefono_a_whatsapp(telefono)
-        email = self.extraer_email_contacto(negocio)
+        email = self.extraer_email_contacto(negocio) or email_web
 
-        neg = dict(negocio, nicho=self.nicho, ciudad=self.ciudad, competidores_con_web=competidores_con_web)
+        neg = dict(negocio, nicho=self.nicho, ciudad=self.ciudad, competidores_con_web=competidores_con_web,
+                   email=email)
         ev = evaluar(neg, escaneo)
+        ev["diagnostico"]["contactos"] = contactos
+        ev["diagnostico"]["whatsapp_confirmado"] = whatsapp_confirmado
 
         lead = {
             "numero": numero, "nombre": negocio["nombre"], "telefono": telefono, "whatsapp": whatsapp,
