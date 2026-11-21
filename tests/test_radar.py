@@ -843,3 +843,102 @@ def test_la_pagina_carga_el_panel_y_sus_recursos(cliente):
     assert "innerHTML" in js and "textContent" in js
     # las etiquetas de datos (ciudad, sector, nombre) nunca se insertan sin escapar en el DOM
     assert "esc(" in js and "window.Analitica" in js
+
+
+# ------------------------------------------------------------------ vistas guardadas del panel
+
+FILTROS_OK = {"preset": "3m", "desde": None, "hasta": None, "ciudad": ["Pereira"], "sector": [], "usuario": [],
+              "prioridad": ["alta"], "oportunidad": [], "score": None,
+              "ui": {"consumoModo": "mes", "heat": "tasa", "rend": "canal"}}
+
+
+@pytest.fixture(scope="module")
+def cliente_laura(cliente):
+    import app as aplicacion
+    r = cliente.post("/api/usuarios", headers=H, json={"usuario": "laura", "nombre": "Laura Gómez",
+                                                        "password": "laura-clave-123", "rol": "usuario"})
+    assert r.status_code in (201, 409)
+    c = aplicacion.app.test_client()
+    assert c.post("/login", data={"usuario": "laura", "password": "laura-clave-123"}).status_code == 302
+    return c
+
+
+def test_crear_listar_y_validar_vistas(cliente):
+    r = cliente.post("/api/vistas", headers=H, json={"nombre": "  Pereira   alta  ", "filtros": FILTROS_OK})
+    assert r.status_code == 201
+    v = r.get_json()
+    assert v["nombre"] == "Pereira alta" and v["propia"] and not v["compartida"] and v["filtros"]["ui"]["heat"] == "tasa"
+    assert any(x["id"] == v["id"] for x in cliente.get("/api/vistas").get_json()["vistas"])
+    # duplicado (sin distinguir mayúsculas), nombre vacío, filtros inválidos, CSRF
+    assert cliente.post("/api/vistas", headers=H, json={"nombre": "PEREIRA ALTA", "filtros": FILTROS_OK}).status_code == 409
+    assert cliente.post("/api/vistas", headers=H, json={"nombre": "  ", "filtros": FILTROS_OK}).status_code == 400
+    assert cliente.post("/api/vistas", headers=H, json={"nombre": "x" * 61, "filtros": FILTROS_OK}).status_code == 400
+    assert cliente.post("/api/vistas", json={"nombre": "Sin cabecera", "filtros": FILTROS_OK}).status_code == 403
+    malos = [dict(FILTROS_OK, preset="hackeado"), dict(FILTROS_OK, desde="2026-13-45", preset="custom"),
+             dict(FILTROS_OK, ciudad="no-es-lista"), dict(FILTROS_OK, ciudad=["a"] * 51),
+             dict(FILTROS_OK, ciudad=[{"x": 1}]), dict(FILTROS_OK, score=[90, 10]), dict(FILTROS_OK, score=[0, 500]),
+             dict(FILTROS_OK, score="alto"), "texto", None]
+    for i, f in enumerate(malos):
+        assert cliente.post("/api/vistas", headers=H, json={"nombre": f"mala {i}", "filtros": f}).status_code == 400, f
+
+
+def test_los_filtros_se_normalizan_y_no_guardan_campos_extra(cliente):
+    sucio = dict(FILTROS_OK, preset="6m", desde="2026-01-01", hasta="2026-02-01", extra="<script>x</script>",
+                 ui={"consumoModo": "raro", "heat": "otro", "rend": 5, "malo": 1})
+    v = cliente.post("/api/vistas", headers=H, json={"nombre": "Normalizada", "filtros": sucio}).get_json()
+    f = v["filtros"]
+    assert "extra" not in f and f["desde"] is None and f["hasta"] is None  # fechas solo en rango personalizado
+    assert f["ui"] == {"consumoModo": "mes", "heat": "leads", "rend": "usuario"}
+    custom = cliente.post("/api/vistas", headers=H, json={"nombre": "Personalizada", "filtros": dict(
+        FILTROS_OK, preset="custom", desde="2026-01-01", hasta="2026-02-01", score=[60, 79])}).get_json()["filtros"]
+    assert custom["desde"] == "2026-01-01" and custom["hasta"] == "2026-02-01" and custom["score"] == [60, 79]
+
+
+def test_predeterminada_solo_una_por_usuario(cliente):
+    a = cliente.post("/api/vistas", headers=H, json={"nombre": "Def A", "filtros": FILTROS_OK}).get_json()["id"]
+    b = cliente.post("/api/vistas", headers=H, json={"nombre": "Def B", "filtros": FILTROS_OK}).get_json()["id"]
+    assert cliente.patch(f"/api/vistas/{a}", headers=H, json={"predeterminada": True}).get_json()["predeterminada"] is True
+    assert cliente.patch(f"/api/vistas/{b}", headers=H, json={"predeterminada": True}).get_json()["predeterminada"] is True
+    estado = {v["id"]: v["predeterminada"] for v in cliente.get("/api/vistas").get_json()["vistas"]}
+    assert estado[a] is False and estado[b] is True
+    assert cliente.patch(f"/api/vistas/{b}", headers=H, json={}).status_code == 400
+    assert cliente.patch(f"/api/vistas/{b}", json={"predeterminada": False}).status_code == 403  # CSRF
+
+
+def test_compartir_privacidad_y_permisos(cliente, cliente_laura):
+    privada = cliente.post("/api/vistas", headers=H, json={"nombre": "Solo admin", "filtros": FILTROS_OK}).get_json()["id"]
+    comp = cliente.post("/api/vistas", headers=H, json={"nombre": "Para el equipo", "filtros": FILTROS_OK, "compartida": True}).get_json()["id"]
+    vistas_laura = {v["nombre"]: v for v in cliente_laura.get("/api/vistas").get_json()["vistas"]}
+    assert "Solo admin" not in vistas_laura                      # lo privado no se ve
+    v = vistas_laura["Para el equipo"]
+    assert v["propia"] is False and v["autor"] and v["predeterminada"] is False and v["puede_borrar"] is False
+    # Laura no puede tocar la ajena: 404 si es privada (no revela que existe), 403 si es compartida
+    assert cliente_laura.delete(f"/api/vistas/{privada}", headers=H).status_code == 404
+    assert cliente_laura.patch(f"/api/vistas/{privada}", headers=H, json={"predeterminada": True}).status_code == 404
+    assert cliente_laura.delete(f"/api/vistas/{comp}", headers=H).status_code == 403
+    assert cliente_laura.patch(f"/api/vistas/{comp}", headers=H, json={"predeterminada": True}).status_code == 403
+    # sus propias vistas: puede crear con el mismo nombre que otro usuario
+    assert cliente_laura.post("/api/vistas", headers=H, json={"nombre": "Para el equipo", "filtros": FILTROS_OK}).status_code == 201
+    # el admin sí puede eliminar una compartida de otro (moderación)
+    mia = [v for v in cliente_laura.get("/api/vistas").get_json()["vistas"] if v["propia"]][0]
+    assert cliente_laura.patch(f"/api/vistas/{mia['id']}", headers=H, json={"compartida": True}).get_json()["compartida"] is True
+    assert cliente.delete(f"/api/vistas/{mia['id']}", headers=H).status_code == 200
+    assert cliente.delete(f"/api/vistas/{mia['id']}", headers=H).status_code == 404
+    assert cliente.delete(f"/api/vistas/{privada}", headers=H).status_code == 200
+
+
+def test_limite_de_vistas_por_usuario(cliente_laura):
+    import app as aplicacion
+    creadas = 0
+    for i in range(aplicacion.MAX_VISTAS_POR_USUARIO + 2):
+        r = cliente_laura.post("/api/vistas", headers=H, json={"nombre": f"Lote {i}", "filtros": FILTROS_OK})
+        creadas += r.status_code == 201
+        if r.status_code == 400:
+            assert "Máximo" in r.get_json()["error"]
+            break
+    assert 0 < creadas <= aplicacion.MAX_VISTAS_POR_USUARIO
+
+
+def test_el_panel_conoce_al_usuario_para_las_vistas(cliente):
+    d = cliente.get("/api/analitica/datos").get_json()
+    assert d["yo"]["rol"] == "admin" and d["yo"]["id"]

@@ -9,6 +9,7 @@ import os
 import csv
 import io
 import json
+import re
 import secrets
 import time
 
@@ -611,7 +612,141 @@ def analitica_datos():
                      'ciudad': c['ciudad'] or '—', 'sector': c['sector'] or '—'} for c in consumo_],
         'usuarios': {str(k): v for k, v in usuarios_.items()},
         'config': {'cuota_mes': CUOTA_MES, 'hoy': date.today().isoformat()},
+        'yo': {'id': request.user['id'], 'rol': request.user['rol']},
     })
+
+
+# ---------------------------------------------------------------- Vistas guardadas
+
+PRESETS_VISTA = {'mes', 'mesant', '3m', '6m', '12m', 'todo', 'custom'}
+LISTAS_VISTA = ('ciudad', 'sector', 'usuario', 'prioridad', 'oportunidad')
+MAX_VISTAS_POR_USUARIO = 30
+
+
+def _filtros_validos(d):
+    """Devuelve los filtros normalizados o None si no tienen la forma esperada (nunca se guarda
+    nada que el panel no pueda interpretar)."""
+    if not isinstance(d, dict) or d.get('preset') not in PRESETS_VISTA:
+        return None
+    out = {'preset': d['preset']}
+    for k in ('desde', 'hasta'):
+        v = d.get(k)
+        if v in (None, ''):
+            out[k] = None
+        elif isinstance(v, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', v):
+            try:
+                date.fromisoformat(v)
+            except ValueError:
+                return None
+            out[k] = v
+        else:
+            return None
+    if out['preset'] != 'custom':
+        out['desde'] = out['hasta'] = None
+    for k in LISTAS_VISTA:
+        v = d.get(k, [])
+        if not isinstance(v, list) or len(v) > 50 or not all(isinstance(x, str) for x in v):
+            return None
+        out[k] = [x[:120] for x in v]
+    sc = d.get('score')
+    if sc is None:
+        out['score'] = None
+    elif (isinstance(sc, list) and len(sc) == 2 and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 100 for x in sc)
+          and sc[0] <= sc[1]):
+        out['score'] = sc
+    else:
+        return None
+    ui = d.get('ui') if isinstance(d.get('ui'), dict) else {}
+    out['ui'] = {
+        'consumoModo': ui.get('consumoModo') if ui.get('consumoModo') in ('mes', 'dia') else 'mes',
+        'heat': ui.get('heat') if ui.get('heat') in ('leads', 'tasa', 'creditos') else 'leads',
+        'rend': ui.get('rend') if ui.get('rend') in ('usuario', 'canal', 'sector') else 'usuario',
+    }
+    return out
+
+
+def _vista_dict(r, nombres, yo):
+    propia = r['usuario_id'] == yo['id']
+    return {'id': r['id'], 'nombre': r['nombre'], 'filtros': _json(r['filtros'], {}), 'compartida': bool(r['compartida']),
+            'predeterminada': bool(r['predeterminada']) and propia, 'propia': propia,
+            'autor': nombres.get(r['usuario_id'], '—'), 'puede_borrar': propia or yo['rol'] == 'admin'}
+
+
+@app.route('/api/vistas')
+def listar_vistas():
+    V = db.vistas
+    with db.engine.connect() as conn:
+        nombres = _nombres_usuarios(conn)
+        rows = conn.execute(select(V).where(or_(V.c.usuario_id == request.user['id'], V.c.compartida.is_(True)))
+                            .order_by(V.c.nombre)).mappings().all()
+    return jsonify({'vistas': [_vista_dict(r, nombres, request.user) for r in rows]})
+
+
+@app.route('/api/vistas', methods=['POST'])
+def crear_vista():
+    d = request.get_json(silent=True) or {}
+    nombre = re.sub(r'\s+', ' ', str(d.get('nombre') or '')).strip()
+    if not nombre or len(nombre) > 60:
+        return jsonify({'error': 'El nombre es obligatorio (máximo 60 caracteres)'}), 400
+    filtros = _filtros_validos(d.get('filtros'))
+    if filtros is None:
+        return jsonify({'error': 'Los filtros de la vista no son válidos'}), 400
+    V, yo = db.vistas, request.user
+    with db.engine.begin() as conn:
+        propias = conn.execute(select(V.c.id, V.c.nombre).where(V.c.usuario_id == yo['id'])).all()
+        if len(propias) >= MAX_VISTAS_POR_USUARIO:
+            return jsonify({'error': f'Máximo {MAX_VISTAS_POR_USUARIO} vistas guardadas: elimina alguna'}), 400
+        if any(p.nombre.lower() == nombre.lower() for p in propias):
+            return jsonify({'error': 'Ya tienes una vista con ese nombre'}), 409
+        nueva = conn.execute(insert(V).values(
+            usuario_id=yo['id'], nombre=nombre, filtros=json.dumps(filtros, ensure_ascii=False),
+            compartida=bool(d.get('compartida')), predeterminada=False, creado_en=db.ahora())).inserted_primary_key[0]
+        r = conn.execute(select(V).where(V.c.id == nueva)).mappings().first()
+        nombres = _nombres_usuarios(conn)
+    return jsonify(_vista_dict(r, nombres, yo)), 201
+
+
+@app.route('/api/vistas/<int:vista_id>', methods=['PATCH'])
+def editar_vista(vista_id):
+    """Solo su autor puede cambiarla: marcarla como predeterminada (una por usuario) o compartirla."""
+    d = request.get_json(silent=True) or {}
+    V, yo = db.vistas, request.user
+    with db.engine.begin() as conn:
+        r = conn.execute(select(V).where(V.c.id == vista_id)).mappings().first()
+        if not r:
+            return jsonify({'error': 'Vista no encontrada'}), 404
+        if r['usuario_id'] != yo['id']:
+            if not r['compartida']:
+                return jsonify({'error': 'Vista no encontrada'}), 404
+            return jsonify({'error': 'Solo su autor puede modificar la vista'}), 403
+        cambios = {}
+        if 'compartida' in d:
+            cambios['compartida'] = bool(d['compartida'])
+        if 'predeterminada' in d:
+            if d['predeterminada']:
+                conn.execute(update(V).where(V.c.usuario_id == yo['id']).values(predeterminada=False))
+            cambios['predeterminada'] = bool(d['predeterminada'])
+        if not cambios:
+            return jsonify({'error': 'Nada que actualizar'}), 400
+        conn.execute(update(V).where(V.c.id == vista_id).values(**cambios))
+        r = conn.execute(select(V).where(V.c.id == vista_id)).mappings().first()
+        nombres = _nombres_usuarios(conn)
+    return jsonify(_vista_dict(r, nombres, yo))
+
+
+@app.route('/api/vistas/<int:vista_id>', methods=['DELETE'])
+def borrar_vista(vista_id):
+    V, yo = db.vistas, request.user
+    with db.engine.begin() as conn:
+        r = conn.execute(select(V).where(V.c.id == vista_id)).mappings().first()
+        if not r:
+            return jsonify({'error': 'Vista no encontrada'}), 404
+        if r['usuario_id'] != yo['id'] and yo['rol'] != 'admin':
+            if not r['compartida']:
+                return jsonify({'error': 'Vista no encontrada'}), 404
+            return jsonify({'error': 'Solo su autor o un administrador puede eliminarla'}), 403
+        conn.execute(db.vistas.delete().where(V.c.id == vista_id))
+    return jsonify({'ok': True})
 
 
 @app.route('/api/serpapi/cuenta')

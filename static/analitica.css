@@ -147,3 +147,6 @@ body.ancho .main { max-width: 1320px; }
 .viz-card-cab { flex-wrap: wrap; }
 #ch-plantillas, #ch-top, #ch-venc, .viz-tabla { overflow-x: auto; }
 .hero-num { overflow-wrap: anywhere; }
+
+/* ----- Vistas guardadas */
+.viz-filtros .vistas select { font-weight: 600; min-width: 150px; max-width: 220px; }

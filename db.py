@@ -134,6 +134,19 @@ consumo = Table(
 )
 
 
+# Vistas guardadas del panel analítico: los filtros (JSON validado) con un nombre.
+vistas = Table(
+    'vistas', metadata,
+    Column('id', Integer, primary_key=True),
+    Column('usuario_id', Integer, ForeignKey('usuarios.id'), nullable=False),
+    Column('nombre', String(60), nullable=False),
+    Column('filtros', Text, nullable=False),
+    Column('compartida', Boolean, nullable=False, default=False),
+    Column('predeterminada', Boolean, nullable=False, default=False),
+    Column('creado_en', DateTime, nullable=False, default=ahora),
+)
+
+
 def registrar_consumo(tipo, creditos, ahorrados=0, usuario_id=None, ciudad=None, sector=None,
                       lead_id=None, detalle=None):
     """Anota un consumo. Nunca debe romper la operación principal si falla."""

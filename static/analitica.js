@@ -47,6 +47,8 @@
     const UI = { consumoModo: 'mes', heat: 'leads', rend: 'usuario', tabla: {} };
     const charts = {}, TABLAS = {};
     let construido = false, S = null;
+    let VISTAS = [], aplicadaDefault = false;
+    const LISTAS = ['ciudad', 'sector', 'usuario', 'prioridad', 'oportunidad'];
 
     const filtroInicial = () => ({ preset: '6m', desde: null, hasta: null, ciudad: new Set(), sector: new Set(),
         usuario: new Set(), prioridad: new Set(), oportunidad: new Set(), score: null });
@@ -603,6 +605,106 @@
     }
 
     // ------------------------------------------------------------------ Filtros (una fila) y chips
+    function listaChips() {
+        const etiq = { ciudad: (v) => v, sector: (v) => v, usuario: (v) => DATA.usuarios[v] || v, prioridad: (v) => PRIO[v].txt, oportunidad: (v) => OPP[v] || v };
+        const nombresDim = { ciudad: 'Ciudad', sector: 'Sector', usuario: 'Usuario', prioridad: 'Prioridad', oportunidad: 'Oportunidad' };
+        const chips = [];
+        Object.keys(etiq).forEach((dim) => F[dim].forEach((v) => chips.push({ t: `${nombresDim[dim]}: ${etiq[dim](v)}`, quitar: () => F[dim].delete(v) })));
+        if (F.score) chips.push({ t: `Puntuación ${F.score[0]}–${F.score[1]}`, quitar: () => { F.score = null; } });
+        return chips;
+    }
+    const rangoTxt = () => { const p = PRESETS.find(([k]) => k === F.preset); const r = rango(); return p ? p[1] : `${r.desde} → ${r.hasta}`; };
+
+    // ------------------------------------------------------------------ Vistas guardadas
+    function serializar() {
+        const custom = F.preset === 'custom';
+        return { preset: F.preset, desde: custom ? F.desde : null, hasta: custom ? F.hasta : null,
+            ciudad: [...F.ciudad], sector: [...F.sector], usuario: [...F.usuario], prioridad: [...F.prioridad], oportunidad: [...F.oportunidad],
+            score: F.score, ui: { consumoModo: UI.consumoModo, heat: UI.heat, rend: UI.rend } };
+    }
+    // Clave para saber si los filtros actuales coinciden con una vista guardada (ignora el orden y la forma de los gráficos)
+    const claveFiltros = (o) => JSON.stringify([o.preset, o.preset === 'custom' ? o.desde : null, o.preset === 'custom' ? o.hasta : null,
+        ...LISTAS.map((k) => [...(o[k] || [])].sort()), o.score || null]);
+    function sincronizarSeg() {
+        document.querySelectorAll('#viz [data-seg]').forEach((b) => {
+            const g = b.dataset.seg, val = g === 'consumo' ? UI.consumoModo : g === 'heat' ? UI.heat : UI.rend, on = b.dataset.v === val;
+            b.classList.toggle('activo', on); b.setAttribute('aria-pressed', on);
+        });
+    }
+    function aplicarVista(o) {
+        F = filtroInicial();
+        F.preset = o.preset; F.desde = o.desde || null; F.hasta = o.hasta || null;
+        LISTAS.forEach((k) => { F[k] = new Set(o[k] || []); });
+        F.score = o.score || null;
+        if (o.ui) { UI.consumoModo = o.ui.consumoModo || 'mes'; UI.heat = o.ui.heat || 'leads'; UI.rend = o.ui.rend || 'usuario'; }
+        sincronizarSeg();
+    }
+    async function enviar(metodo, url, cuerpo) {
+        const r = await fetch(url, { method: metodo, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined });
+        if (r.status === 401) { location.href = '/login'; throw new Error('Sesión caducada'); }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'No se pudo completar la acción');
+        return d;
+    }
+    async function recargarVistas() { VISTAS = (await pedir('/api/vistas')).vistas; pintarVistas(); }
+    function vistaActiva() { const k = claveFiltros(serializar()); return VISTAS.find((v) => claveFiltros(v.filtros) === k) || null; }
+
+    function pintarVistas() {
+        const sel = $id('vizVistas'); if (!sel) return;
+        const op = (v) => `<option value="${v.id}">${v.predeterminada ? '★ ' : ''}${esc(v.nombre)}${v.propia && v.compartida ? ' (compartida)' : ''}${v.propia ? '' : ' · ' + esc(v.autor)}</option>`;
+        const propias = VISTAS.filter((v) => v.propia), ajenas = VISTAS.filter((v) => !v.propia);
+        sel.innerHTML = '<option value="">Vistas guardadas…</option>' +
+            (propias.length ? `<optgroup label="Mis vistas">${propias.map(op).join('')}</optgroup>` : '') +
+            (ajenas.length ? `<optgroup label="Del equipo">${ajenas.map(op).join('')}</optgroup>` : '');
+        const activa = vistaActiva();
+        sel.value = activa ? String(activa.id) : '';
+        const def = $id('vizVistaDef');
+        def.hidden = !(activa && activa.propia);
+        def.textContent = activa && activa.predeterminada ? '★ Predeterminada' : '☆ Hacer predeterminada';
+        def.setAttribute('aria-pressed', String(!!(activa && activa.predeterminada)));
+        $id('vizVistaDel').hidden = !(activa && activa.puede_borrar);
+    }
+    function nombreSugerido() {
+        const partes = [...F.ciudad, ...F.sector, ...[...F.prioridad].map((k) => PRIO[k].txt), ...[...F.oportunidad].map((o) => OPP[o] || o)];
+        return (partes.length ? partes.join(' · ') : rangoTxt()).slice(0, 60);
+    }
+    function abrirDialogoVista() {
+        const dlg = $id('vizDlgVista');
+        $id('vizNombreVista').value = nombreSugerido(); $id('vizCompartir').checked = false;
+        $id('vizResumenVista').textContent = 'Se guardará: ' + [rangoTxt(), ...listaChips().map((c) => c.t)].join(' · ');
+        $id('vizDlgErr').classList.remove('active');
+        dlg.showModal(); $id('vizNombreVista').select();
+    }
+    function crearDialogoVista() {
+        const dlg = document.createElement('dialog');
+        dlg.id = 'vizDlgVista'; dlg.setAttribute('aria-labelledby', 'vizDlgTit');
+        dlg.innerHTML = `<div class="dlg-cab"><h2 id="vizDlgTit">Guardar vista</h2>
+            <button type="button" class="btn-icono" id="vizDlgX" aria-label="Cerrar"><svg class="icono" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+            <div class="dlg-cuerpo"><div class="aviso error" id="vizDlgErr" role="alert"></div>
+            <form id="vizFormVista" autocomplete="off">
+                <div class="form-group"><label for="vizNombreVista">Nombre de la vista</label>
+                    <input type="text" id="vizNombreVista" maxlength="60" required></div>
+                <p class="ayuda" id="vizResumenVista" style="margin-bottom:12px"></p>
+                <label class="check"><input type="checkbox" id="vizCompartir"> Compartir con el equipo (podrán verla y aplicarla, no modificarla)</label>
+                <div class="dlg-acciones"><button type="button" class="btn btn-clear" id="vizDlgCancel">Cancelar</button>
+                    <button type="submit" class="btn btn-primario" id="vizDlgOk"><span>Guardar</span></button></div>
+            </form></div>`;
+        document.body.appendChild(dlg);
+        const cerrar = () => dlg.close();
+        dlg.querySelector('#vizDlgX').addEventListener('click', cerrar);
+        dlg.querySelector('#vizDlgCancel').addEventListener('click', cerrar);
+        dlg.addEventListener('click', (e) => { if (e.target === dlg) cerrar(); });
+        dlg.querySelector('#vizFormVista').addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            const ok = $id('vizDlgOk'); ok.disabled = true;
+            try {
+                await enviar('POST', '/api/vistas', { nombre: $id('vizNombreVista').value, filtros: serializar(), compartida: $id('vizCompartir').checked });
+                dlg.close(); await recargarVistas();
+            } catch (e) { const er = $id('vizDlgErr'); er.textContent = e.message; er.classList.add('active'); }
+            finally { ok.disabled = false; }
+        });
+    }
+
     function pintarFiltros() {
         const rg = rango();
         $id('vizPresets').innerHTML = PRESETS.map(([k, t]) => `<button type="button" class="viz-btn${F.preset === k ? ' activo' : ''}" data-preset="${k}" aria-pressed="${F.preset === k}">${t}</button>`).join('');
@@ -616,11 +718,7 @@
             const sel = $id('vizSel-' + dim), titulo = sel.dataset.titulo;
             sel.innerHTML = `<option value="">${esc(titulo)}…</option>` + lista.map((o) => Array.isArray(o) ? `<option value="${esc(o[0])}">${esc(o[1])}</option>` : `<option value="${esc(o)}">${esc(o)}</option>`).join('');
         });
-        const etiq = { ciudad: (v) => v, sector: (v) => v, usuario: (v) => DATA.usuarios[v] || v, prioridad: (v) => PRIO[v].txt, oportunidad: (v) => OPP[v] || v };
-        const nombresDim = { ciudad: 'Ciudad', sector: 'Sector', usuario: 'Usuario', prioridad: 'Prioridad', oportunidad: 'Oportunidad' };
-        const chips = [];
-        Object.keys(etiq).forEach((dim) => F[dim].forEach((v) => chips.push({ t: `${nombresDim[dim]}: ${etiq[dim](v)}`, quitar: () => F[dim].delete(v) })));
-        if (F.score) chips.push({ t: `Puntuación ${F.score[0]}–${F.score[1]}`, quitar: () => { F.score = null; } });
+        const chips = listaChips();
         const cont = $id('vizChips'); cont.textContent = '';
         chips.forEach((c) => {
             const s = document.createElement('span'); s.className = 'vchip'; s.append(c.t + ' ');
@@ -628,6 +726,7 @@
             b.addEventListener('click', () => { c.quitar(); render(); }); s.appendChild(b); cont.appendChild(s);
         });
         $id('vizReset').hidden = !chips.length && F.preset === '6m';
+        pintarVistas();
     }
 
     // ------------------------------------------------------------------ construcción y render
@@ -643,6 +742,10 @@
         $id('analiticaCont').innerHTML = `<div class="viz-root" id="viz">
             <section class="viz-hero" id="vizHero" aria-label="Consumo del mes"></section>
             <div class="viz-filtros" id="vizFiltros">
+                <span class="grupo vistas"><select id="vizVistas" aria-label="Vistas guardadas"></select>
+                    <button type="button" class="viz-btn" id="vizGuardarVista" title="Guardar los filtros actuales con un nombre">Guardar vista</button>
+                    <button type="button" class="viz-btn" id="vizVistaDef" hidden aria-pressed="false" title="El panel se abrirá con esta vista"></button>
+                    <button type="button" class="viz-btn" id="vizVistaDel" hidden>Eliminar</button></span>
                 <div class="viz-seg" id="vizPresets" role="group" aria-label="Rango de fechas"></div>
                 <span class="grupo"><label class="mini" for="vizDesde">Desde</label><input type="date" id="vizDesde"><label class="mini" for="vizHasta">Hasta</label><input type="date" id="vizHasta"></span>
                 <span class="grupo">${sel('ciudad', 'Ciudad')}${sel('sector', 'Sector')}${sel('usuario', 'Usuario')}${sel('prioridad', 'Prioridad')}${sel('oportunidad', 'Oportunidad')}</span>
@@ -677,15 +780,27 @@
                 s.parentElement.querySelectorAll('.viz-btn').forEach((b) => { const on = b === s; b.classList.toggle('activo', on); b.setAttribute('aria-pressed', on); });
                 ({ consumo: pintarConsumo, heat: pintarCalor, rend: pintarRend })[g](); return; }
             if (e.target.id === 'vizReset') { F = filtroInicial(); render(); return; }
+            if (e.target.id === 'vizGuardarVista') { abrirDialogoVista(); return; }
+            if (e.target.id === 'vizVistaDef') {
+                const v = vistaActiva(); if (!v) return;
+                enviar('PATCH', '/api/vistas/' + v.id, { predeterminada: !v.predeterminada }).then(recargarVistas).catch((er) => alert(er.message)); return;
+            }
+            if (e.target.id === 'vizVistaDel') {
+                const v = vistaActiva();
+                if (v && confirm(`¿Eliminar la vista "${v.nombre}"?`)) enviar('DELETE', '/api/vistas/' + v.id).then(recargarVistas).catch((er) => alert(er.message));
+                return;
+            }
             if (e.target.id === 'vizVerSeg') { const c = document.getElementById('fSeg'); if (c) c.checked = true; if (window.irA) window.irA('leads'); }
         });
         raiz.addEventListener('change', (e) => {
             const id = e.target.id;
             if (id === 'vizDesde' || id === 'vizHasta') { F.preset = 'custom'; F.desde = $id('vizDesde').value || null; F.hasta = $id('vizHasta').value || null; render(); return; }
+            if (id === 'vizVistas') { const v = VISTAS.find((x) => String(x.id) === e.target.value); if (v) { aplicarVista(v.filtros); render(); } return; }
             const m = /^vizSel-(.+)$/.exec(id);
             if (m && e.target.value) { F[m[1]].add(e.target.value); render(); }
         });
         if (window.ResizeObserver) new ResizeObserver(() => Object.values(charts).forEach((c) => { if (!c.isDisposed()) c.resize(); })).observe(raiz);
+        crearDialogoVista();
         construido = true;
     }
 
@@ -710,13 +825,19 @@
         if (err) err.classList.remove('active');
         if (!construido && !DATA) cont.innerHTML = '<div class="vacio-viz">Cargando el panel…</div>';
         try {
-            const [datos, cuenta] = await Promise.all([pedir('/api/analitica/datos'), pedir('/api/serpapi/cuenta').catch(() => null)]);
+            const [datos, cuenta, vistas] = await Promise.all([pedir('/api/analitica/datos'), pedir('/api/serpapi/cuenta').catch(() => null),
+                pedir('/api/vistas').catch(() => ({ vistas: [] }))]);
             datos.leads.forEach((l) => { l.f = fechaLocal(l.creado); });
             datos.eventos.forEach((e) => { e.f = fechaLocal(e.fecha); });
             datos.consumo.forEach((c) => { c.f = fechaLocal(c.fecha); });
-            DATA = datos; CUENTA = cuenta;
+            DATA = datos; CUENTA = cuenta; VISTAS = vistas.vistas || [];
             if (!F) F = filtroInicial();
             if (!construido) construir();
+            if (!aplicadaDefault) {  // la primera vez, el panel se abre con la vista predeterminada del usuario
+                aplicadaDefault = true;
+                const d = VISTAS.find((v) => v.propia && v.predeterminada);
+                if (d) aplicarVista(d.filtros);
+            }
             const raiz = $id('viz'); raiz.classList.add('cargando');
             render();
             requestAnimationFrame(() => { raiz.classList.remove('cargando'); Object.values(charts).forEach((c) => { if (!c.isDisposed()) c.resize(); }); });
