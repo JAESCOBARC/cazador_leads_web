@@ -325,7 +325,7 @@
                     <div><label for="mVariante">Variante</label>
                         <select id="mVariante"><option value="a">A</option><option value="b">B</option></select></div>
                 </div>
-                <div class="email-subject" id="dlgAsunto" hidden></div>
+                <div class="email-subject" id="dlgAsunto" hidden><div style="display:flex;gap:8px;align-items:center"><label for="dlgAsuntoInput" style="margin:0"><strong>Asunto:</strong></label><input type="text" id="dlgAsuntoInput" maxlength="200" autocomplete="off" style="flex:1;min-width:0"></div></div>
                 <div class="email-body" id="dlgCuerpo"></div>
                 <div class="msg-meta" id="dlgMsgMeta"></div>
                 <div class="msg-acciones">
@@ -1268,11 +1268,12 @@
         $('mAngulo').value = MSG.angulo; $('mCanal').value = MSG.canal;
         $('mPaso').value = String(MSG.paso); $('mVariante').value = MSG.variante;
         $('dlgAsunto').hidden = !MSG.asunto;
-        $('dlgAsunto').innerHTML = MSG.asunto ? `<strong>Asunto:</strong> ${escapeHtml(MSG.asunto)}` : '';
+        $('dlgAsuntoInput').value = MSG.asunto || '';
         $('dlgCuerpo').textContent = MSG.cuerpo;
         const puedeMail = MSG.canal === 'email' && !!MSG.asunto && !!leadActual.email && CORREO.puede_enviar && !['cerrado', 'descartado'].includes(leadActual.estado);
         $('dlgEnviarEmail').hidden = !puedeMail;
         $('dlgPrueba').hidden = !(MSG.canal === 'email' && !!MSG.asunto && CORREO.puede_enviar);
+        $('dlgAsuntoInput').readOnly = !puedeMail && $('dlgPrueba').hidden;
         $('dlgCuerpo').contentEditable = puedeMail ? 'true' : 'false';
         $('dlgMsgMeta').textContent = `${MSG.palabras} palabras · ${MSG.toques} envío(s) registrados · plantilla ${MSG.plantilla}` +
             (puedeMail ? ` · puedes editar el texto antes de enviar (${CORREO.limite_dia - CORREO.enviados_hoy} envíos disponibles hoy)` : '');
@@ -1297,6 +1298,9 @@
         finally { btn.disabled = false; }
     });
 
+    // El asunto es editable antes de enviar; si lo dejas vacío se usa el generado
+    const asuntoActual = () => ($('dlgAsuntoInput').value.trim() || MSG.asunto || '');
+
     // Prueba: el mismo mensaje, pero solo a tu propio correo (nunca al lead)
     $('dlgPrueba').addEventListener('click', async () => {
         if (!MSG || !MSG.asunto) return;
@@ -1304,7 +1308,7 @@
         ocultar($('dlgError'));
         btn.disabled = true;
         try {
-            const r = await api(`/api/leads/${leadActual.id}/enviar-prueba`, json('POST', { asunto: MSG.asunto, cuerpo: $('dlgCuerpo').innerText.trim() }));
+            const r = await api(`/api/leads/${leadActual.id}/enviar-prueba`, json('POST', { asunto: asuntoActual(), cuerpo: $('dlgCuerpo').innerText.trim() }));
             alert(`Prueba enviada a ${r.destinos.join(', ')}. Revisa tu bandeja (y spam).` +
                 (r.pendientes.length ? `\n\nOjo: aún tiene datos por completar: ${r.pendientes.join(', ')}. Complétalos en Ajustes → Remitente y firma.` : ''));
         } catch (e) { aviso($('dlgError'), 'error', e.message); }
@@ -1315,13 +1319,13 @@
     $('dlgEnviarEmail').addEventListener('click', async () => {
         if (!MSG || !MSG.asunto) return;
         const cuerpo = $('dlgCuerpo').innerText.trim();
-        if (!confirm(`Se enviará este correo a ${leadActual.email}\n\nAsunto: ${MSG.asunto}\n\n${cuerpo}\n\n` +
+        if (!confirm(`Se enviará este correo a ${leadActual.email}\n\nAsunto: ${asuntoActual()}\n\n${cuerpo}\n\n` +
             'Sale desde tu cuenta de correo configurada, con una línea para darse de baja, y queda registrado en el historial. ¿Enviar?')) return;
         const btn = $('dlgEnviarEmail');
         ocultar($('dlgError'));
         btn.disabled = true;
         try {
-            const r = await api(`/api/leads/${leadActual.id}/enviar-email`, json('POST', { asunto: MSG.asunto, cuerpo, confirmar: true, plantilla: MSG.plantilla }));
+            const r = await api(`/api/leads/${leadActual.id}/enviar-email`, json('POST', { asunto: asuntoActual(), cuerpo, confirmar: true, plantilla: MSG.plantilla }));
             CORREO.enviados_hoy = (CORREO.limite_dia || 0) - r.envios_restantes_hoy;
             await abrirLead(leadActual.id, true);
             if ($('vista-leads').classList.contains('active')) cargarLeads();
@@ -1333,7 +1337,7 @@
 
     $('dlgCopiar').addEventListener('click', async () => {
         if (!MSG) return;
-        const txt = (MSG.asunto ? 'Asunto: ' + MSG.asunto + '\n\n' : '') + $('dlgCuerpo').innerText.trim();
+        const txt = (MSG.asunto ? 'Asunto: ' + asuntoActual() + '\n\n' : '') + $('dlgCuerpo').innerText.trim();
         const span = $('dlgCopiar').querySelector('span');
         try { await navigator.clipboard.writeText(txt); span.textContent = 'Copiado'; }
         catch (e) { span.textContent = 'No se pudo copiar'; }
